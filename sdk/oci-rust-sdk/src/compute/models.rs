@@ -113,3 +113,59 @@ pub enum LifecycleState {
     Terminating,
     Terminated,
 }
+
+/// Availability Domain
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailabilityDomain {
+    pub name: String,
+    pub compartment_id: String,
+}
+
+/// Image information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Image {
+    pub id: String,
+    pub compartment_id: Option<String>,
+    pub display_name: Option<String>,
+    pub operating_system: Option<String>,
+    pub operating_system_version: Option<String>,
+    pub lifecycle_state: Option<String>,
+    pub time_created: Option<String>,
+}
+
+/// Shape information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Shape {
+    pub shape: String,
+    pub processor_description: Option<String>,
+    pub ocpus: Option<f32>,
+    pub memory_in_gbs: Option<f32>,
+    pub networking_bandwidth_in_gbps: Option<f32>,
+}
+
+/// VCN (Virtual Cloud Network)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Vcn {
+    pub id: String,
+    pub compartment_id: String,
+    pub display_name: Option<String>,
+    pub cidr_block: Option<String>,
+    pub lifecycle_state: String,
+}
+
+/// Subnet
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Subnet {
+    pub id: String,
+    pub compartment_id: String,
+    pub vcn_id: String,
+    pub display_name: Option<String>,
+    pub cidr_block: Option<String>,
+    pub lifecycle_state: String,
+    pub availability_domain: Option<String>,
+}

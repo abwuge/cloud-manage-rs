@@ -1,4 +1,4 @@
-use super::models::{Instance, LaunchInstanceDetails};
+use super::models::{AvailabilityDomain, Image, Instance, LaunchInstanceDetails, Shape, Subnet, Vcn};
 use crate::auth::{ConfigurationProvider, RequestSigner};
 use reqwest::Client;
 
@@ -130,5 +130,146 @@ impl ComputeClient {
         }
         
         Ok(())
+    }
+
+    /// List availability domains in a compartment
+    pub async fn list_availability_domains(
+        &self,
+        compartment_id: &str,
+    ) -> Result<Vec<AvailabilityDomain>, Box<dyn std::error::Error>> {
+        let path = format!("/20160918/availabilityDomains?compartmentId={}", compartment_id);
+        let url = format!("https://identity.{}.oraclecloud.com{}", self.region, path);
+        let host = format!("identity.{}.oraclecloud.com", self.region);
+
+        let auth_header = self.signer.sign_request("GET", &path, &host, None, &[])?;
+
+        let response = self
+            .http_client
+            .get(&url)
+            .header("authorization", auth_header)
+            .header("date", RequestSigner::get_date_header())
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            return Err(format!("API error {}: {}", status, error_text).into());
+        }
+
+        let domains: Vec<AvailabilityDomain> = response.json().await?;
+        Ok(domains)
+    }
+
+    /// List images in a compartment
+    pub async fn list_images(
+        &self,
+        compartment_id: &str,
+    ) -> Result<Vec<Image>, Box<dyn std::error::Error>> {
+        let path = format!("/20160918/images?compartmentId={}", compartment_id);
+        let url = format!("{}{}", self.endpoint(), path);
+
+        let auth_header = self.signer.sign_request("GET", &path, &self.host(), None, &[])?;
+
+        let response = self
+            .http_client
+            .get(&url)
+            .header("authorization", auth_header)
+            .header("date", RequestSigner::get_date_header())
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            return Err(format!("API error {}: {}", status, error_text).into());
+        }
+
+        let images: Vec<Image> = response.json().await?;
+        Ok(images)
+    }
+
+    /// List shapes available in a compartment
+    pub async fn list_shapes(
+        &self,
+        compartment_id: &str,
+    ) -> Result<Vec<Shape>, Box<dyn std::error::Error>> {
+        let path = format!("/20160918/shapes?compartmentId={}", compartment_id);
+        let url = format!("{}{}", self.endpoint(), path);
+
+        let auth_header = self.signer.sign_request("GET", &path, &self.host(), None, &[])?;
+
+        let response = self
+            .http_client
+            .get(&url)
+            .header("authorization", auth_header)
+            .header("date", RequestSigner::get_date_header())
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            return Err(format!("API error {}: {}", status, error_text).into());
+        }
+
+        let shapes: Vec<Shape> = response.json().await?;
+        Ok(shapes)
+    }
+
+    /// List VCNs in a compartment
+    pub async fn list_vcns(
+        &self,
+        compartment_id: &str,
+    ) -> Result<Vec<Vcn>, Box<dyn std::error::Error>> {
+        let path = format!("/20160918/vcns?compartmentId={}", compartment_id);
+        let url = format!("{}{}", self.endpoint(), path);
+
+        let auth_header = self.signer.sign_request("GET", &path, &self.host(), None, &[])?;
+
+        let response = self
+            .http_client
+            .get(&url)
+            .header("authorization", auth_header)
+            .header("date", RequestSigner::get_date_header())
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            return Err(format!("API error {}: {}", status, error_text).into());
+        }
+
+        let vcns: Vec<Vcn> = response.json().await?;
+        Ok(vcns)
+    }
+
+    /// List subnets in a compartment
+    pub async fn list_subnets(
+        &self,
+        compartment_id: &str,
+    ) -> Result<Vec<Subnet>, Box<dyn std::error::Error>> {
+        let path = format!("/20160918/subnets?compartmentId={}", compartment_id);
+        let url = format!("{}{}", self.endpoint(), path);
+
+        let auth_header = self.signer.sign_request("GET", &path, &self.host(), None, &[])?;
+
+        let response = self
+            .http_client
+            .get(&url)
+            .header("authorization", auth_header)
+            .header("date", RequestSigner::get_date_header())
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            return Err(format!("API error {}: {}", status, error_text).into());
+        }
+
+        let subnets: Vec<Subnet> = response.json().await?;
+        Ok(subnets)
     }
 }

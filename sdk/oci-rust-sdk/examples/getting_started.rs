@@ -1,5 +1,6 @@
 use oci_rust_sdk::auth::{ConfigurationProvider, FileConfigProvider};
 use oci_rust_sdk::compute::ComputeClient;
+use std::env;
 use std::path::Path;
 
 /// Example: Test OCI API connection and authentication
@@ -7,27 +8,23 @@ use std::path::Path;
 /// Environment variables:
 /// - OCI_CONFIG_FILE: Path to OCI config file (default: ~/.oci/config)
 /// - OCI_CONFIG_PROFILE: Profile name to use (default: DEFAULT)
+/// 
+/// Optional variables for testing:
 /// - OCI_TEST_INSTANCE_ID: Instance ID to test (optional, uses fake ID if not set)
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== OCI SDK Connection Test ===\n");
     
-    // Get config file path from environment or use default
-    let config_path = std::env::var("OCI_CONFIG_FILE")
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME")
-                .or_else(|_| std::env::var("USERPROFILE"))
-                .expect("Cannot determine home directory");
-            format!("{}/.oci/config", home)
-        });
-    
-    let profile = std::env::var("OCI_CONFIG_PROFILE").unwrap_or_else(|_| "DEFAULT".to_string());
+    // Load configuration from environment variables
+    let config_file = env::var("OCI_CONFIG_FILE")
+        .unwrap_or_else(|_| format!("{}/.oci/config", env::var("HOME").unwrap()));
+    let profile = env::var("OCI_CONFIG_PROFILE").unwrap_or_else(|_| "DEFAULT".to_string());
     
     println!("Loading configuration...");
-    println!("  Config file: {}", config_path);
+    println!("  Config file: {}", config_file);
     println!("  Profile: {}", profile);
     
-    let config = FileConfigProvider::from_file(Path::new(&config_path), &profile)?;
+    let config = FileConfigProvider::from_file(Path::new(&config_file), &profile)?;
     
     println!("✓ Configuration loaded successfully");
     println!("  Region: {}", config.region()?);
@@ -42,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Test API call - use instance ID from environment if provided
     println!("\nTesting API authentication...");
-    let test_instance_id = std::env::var("OCI_TEST_INSTANCE_ID")
+    let test_instance_id = env::var("OCI_TEST_INSTANCE_ID")
         .unwrap_or_else(|_| format!("ocid1.instance.oc1.{}.test", config.region().unwrap_or_default()));
     
     println!("  Testing with instance ID: {}", test_instance_id);

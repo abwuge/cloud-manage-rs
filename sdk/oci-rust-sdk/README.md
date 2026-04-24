@@ -3,7 +3,8 @@
 ## Features Implemented
 
 ✅ **User Principal Authentication** - API Key based authentication  
-✅ **Compute Instance Management** - Create, get, and terminate instances
+✅ **Compute Instance Management** - Create, get, and terminate instances  
+✅ **Resource Queries** - List availability domains, images, shapes, VCNs, and subnets
 
 ## Authentication
 
