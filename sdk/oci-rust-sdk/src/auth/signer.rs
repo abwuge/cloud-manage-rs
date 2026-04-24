@@ -3,7 +3,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use chrono::Utc;
 use rsa::pkcs1::DecodeRsaPrivateKey;
 use rsa::pkcs8::DecodePrivateKey;
-use rsa::pkcs1v15::{Signature, SigningKey};
+use rsa::pkcs1v15::SigningKey;
 use rsa::signature::{Signer, SignatureEncoding};
 use rsa::RsaPrivateKey;
 use sha2::{Digest, Sha256};
@@ -88,34 +88,18 @@ impl RequestSigner {
             signing_headers.push("x-content-sha256".to_string());
         }
 
-        // Sign the string using PKCS#1 v1.5 (NOT PSS!) to match Go SDK
-        // Go SDK uses: rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hashed)
-        
-        // First, hash the signing string with SHA256
-        let mut hasher = Sha256::new();
-        hasher.update(signing_string.as_bytes());
-        let digest = hasher.finalize();
-        
         // Debug: print signing string
         eprintln!("=== DEBUG: Signing String ===");
         eprintln!("{}", signing_string);
         eprintln!("=== END Signing String ===\n");
         
-        // Sign using PKCS#1 v1.5 with SHA256 DigestInfo
-        // Go SDK uses: rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hashed)
-        // This adds the DigestInfo prefix for SHA256 before signing
-        
-        // DigestInfo for SHA256: 0x3031300d060960864801650304020105000420 + hash
-        let mut digest_info = vec![
-            0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
-            0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
-            0x00, 0x04, 0x20,
-        ];
-        digest_info.extend_from_slice(&digest);
-        
-        let signing_key = SigningKey::<Sha256>::new_unprefixed(self.private_key.clone());
-        let signature: Signature = signing_key.sign(&digest_info);
-        let signature_b64 = BASE64.encode(signature.to_bytes().as_ref());
+        // Sign the COMPLETE signing string (not a pre-computed hash!)
+        // Python SDK: self._rsa_private.sign(data, padding.PKCS1v15(), SHA256())
+        // Java SDK: Signature.getInstance("SHA256withRSA").sign(stringToSign.getBytes())
+        // This automatically: 1) hashes the data, 2) adds DigestInfo, 3) applies PKCS#1 v1.5 padding
+        let signing_key = SigningKey::<Sha256>::new(self.private_key.clone());
+        let signature = signing_key.sign(signing_string.as_bytes());
+        let signature_b64 = BASE64.encode(signature.to_vec());
         
         // Debug: print authorization header
         eprintln!("=== DEBUG: Authorization Header ===");
