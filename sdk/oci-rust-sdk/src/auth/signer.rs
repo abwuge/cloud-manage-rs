@@ -88,11 +88,6 @@ impl RequestSigner {
             signing_headers.push("x-content-sha256".to_string());
         }
 
-        // Debug: print signing string
-        eprintln!("=== DEBUG: Signing String ===");
-        eprintln!("{}", signing_string);
-        eprintln!("=== END Signing String ===\n");
-        
         // Sign the COMPLETE signing string (not a pre-computed hash!)
         // Python SDK: self._rsa_private.sign(data, padding.PKCS1v15(), SHA256())
         // Java SDK: Signature.getInstance("SHA256withRSA").sign(stringToSign.getBytes())
@@ -100,12 +95,6 @@ impl RequestSigner {
         let signing_key = SigningKey::<Sha256>::new(self.private_key.clone());
         let signature = signing_key.sign(signing_string.as_bytes());
         let signature_b64 = BASE64.encode(signature.to_vec());
-        
-        // Debug: print authorization header
-        eprintln!("=== DEBUG: Authorization Header ===");
-        eprintln!("Headers: {}", signing_headers.join(" "));
-        eprintln!("Signature: {}", signature_b64);
-        eprintln!("=== END Authorization ===\n");
 
         // Build Authorization header - exact format from Go SDK
         let auth_header = format!(
