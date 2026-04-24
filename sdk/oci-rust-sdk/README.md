@@ -1,87 +1,19 @@
 # OCI Rust SDK
 
-## Features Implemented
+Oracle Cloud Infrastructure SDK for Rust.
 
-✅ **User Principal Authentication** - API Key based authentication  
-✅ **Compute Instance Management** - Create, get, and terminate instances  
-✅ **Resource Queries** - List availability domains, images, shapes, VCNs, and subnets
+## Features
 
-## Authentication
+- User Principal (API Key) authentication
+- Compute instance management
+- Resource queries (availability domains, images, shapes, VCNs, subnets)
 
-```rust
-use oci_rust_sdk::auth::FileConfigProvider;
+## Quick Start
 
-// Load configuration from default location (~/.oci/config)
-let config = FileConfigProvider::new()?;
+### Configuration
 
-// Or load from specific profile
-let config = FileConfigProvider::from_profile("PRODUCTION")?;
-```
+Create `~/.oci/config`:
 
-## Compute Instance Management
-
-### Create Instance
-
-```rust
-use oci_rust_sdk::compute::{
-    ComputeClient, LaunchInstanceDetails, InstanceSourceDetails, CreateVnicDetails,
-};
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize client
-    let config = FileConfigProvider::new()?;
-    let compute_client = ComputeClient::new(&config)?;
-    
-    // Prepare launch details
-    let launch_details = LaunchInstanceDetails {
-        availability_domain: "Uocm:PHX-AD-1".to_string(),
-        compartment_id: "ocid1.compartment.oc1..aaaaaa...".to_string(),
-        shape: "VM.Standard2.1".to_string(),
-        source_details: InstanceSourceDetails::Image {
-            image_id: "ocid1.image.oc1.phx.aaaaaa...".to_string(),
-            boot_volume_size_in_gbs: Some(50),
-        },
-        create_vnic_details: Some(CreateVnicDetails {
-            subnet_id: "ocid1.subnet.oc1.phx.aaaaaa...".to_string(),
-            assign_public_ip: Some(true),
-            display_name: Some("my-vnic".to_string()),
-            hostname_label: None,
-            private_ip: None,
-        }),
-        display_name: Some("my-instance".to_string()),
-        hostname_label: None,
-        metadata: None,
-        shape_config: None,
-        freeform_tags: None,
-    };
-    
-    // Launch instance
-    let instance = compute_client.launch_instance(&launch_details).await?;
-    println!("Instance created: {}", instance.id);
-    println!("State: {:?}", instance.lifecycle_state);
-    
-    Ok(())
-}
-```
-
-### Get Instance
-
-```rust
-let instance = compute_client.get_instance("ocid1.instance.oc1.phx.aaaaaa...").await?;
-println!("Instance: {} - {:?}", instance.display_name.unwrap_or_default(), instance.lifecycle_state);
-```
-
-### Terminate Instance
-
-```rust
-compute_client.terminate_instance("ocid1.instance.oc1.phx.aaaaaa...").await?;
-println!("Instance terminated");
-```
-
-## Configuration File Format
-
-`~/.oci/config`:
 ```ini
 [DEFAULT]
 user=ocid1.user.oc1..aaaaaaaa...
@@ -91,19 +23,40 @@ tenancy=ocid1.tenancy.oc1..aaaaaaaa...
 region=us-ashburn-1
 ```
 
-## Module Structure
+### Basic Usage
 
+```rust
+use oci_rust_sdk::auth::FileConfigProvider;
+use oci_rust_sdk::compute::ComputeClient;
+use std::path::Path;
+
+let config = FileConfigProvider::from_file(Path::new("~/.oci/config"), "DEFAULT")?;
+let client = ComputeClient::new(&config)?;
+
+// List availability domains
+let domains = client.list_availability_domains(&compartment_id).await?;
+
+// Launch instance
+let instance = client.launch_instance(&launch_details).await?;
 ```
-src/
-├── auth/           - Authentication module
-│   ├── config.rs   - ConfigurationProvider trait
-│   ├── error.rs    - Error types
-│   ├── file_config.rs - File-based config provider
-│   └── signer.rs   - HTTP request signer
-└── compute/        - Compute service module
-    ├── client.rs   - ComputeClient implementation
-    └── models.rs   - Data structures
+
+### Examples
+
+```bash
+# Test authentication
+cargo run --example getting_started
+
+# List resources and create instance
+cargo run --example create_instance
 ```
+
+## Documentation
+
+- [API Documentation](docs/) - Detailed API reference
+  - [Authentication](docs/authentication.md)
+  - [Compute Client](docs/compute.md)
+  - [Data Models](docs/models.md)
+- [Examples](examples/) - Code examples
 
 ## License
 
