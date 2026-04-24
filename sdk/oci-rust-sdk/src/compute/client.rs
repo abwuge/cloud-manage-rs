@@ -26,42 +26,50 @@ impl ComputeClient {
         format!("https://iaas.{}.oraclecloud.com", self.region)
     }
     
-    /// Launch a new compute instance
-    pub async fn launch_instance(
-        &self,
-        details: &LaunchInstanceDetails,
-    ) -> Result<Instance, Box<dyn std::error::Error>> {
-        let url = format!("{}/20160918/instances", self.endpoint());
-        let body = serde_json::to_vec(details)?;
-        
-        // Sign and send request
-        let auth_header = self.signer.sign_request(
-            "POST",
-            "/20160918/instances",
-            &format!("iaas.{}.oraclecloud.com", self.region),
-            Some(&body),
-            &[("content-type", "application/json")],
-        )?;
-        
-        let date_header = RequestSigner::get_date_header();
-        
-        let response = self.http_client
-            .post(&url)
-            .header("authorization", auth_header)
-            .header("date", date_header)
-            .header("content-type", "application/json")
-            .body(body)
-            .send()
-            .await?;
-        
+    /// Get the host for API requests
+    fn host(&self) -> String {
+        format!("iaas.{}.oraclecloud.com", self.region)
+    }
+    
+    /// Handle API response errors
+    async fn handle_response<T: serde::de::DeserializeOwned>(
+        response: reqwest::Response,
+    ) -> Result<T, Box<dyn std::error::Error>> {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await?;
             return Err(format!("API error {}: {}", status, error_text).into());
         }
+        Ok(response.json().await?)
+    }
+    
+    /// Launch a new compute instance
+    pub async fn launch_instance(
+        &self,
+        details: &LaunchInstanceDetails,
+    ) -> Result<Instance, Box<dyn std::error::Error>> {
+        let path = "/20160918/instances";
+        let url = format!("{}{}", self.endpoint(), path);
+        let body = serde_json::to_vec(details)?;
         
-        let instance: Instance = response.json().await?;
-        Ok(instance)
+        let auth_header = self.signer.sign_request(
+            "POST",
+            path,
+            &self.host(),
+            Some(&body),
+            &[("content-type", "application/json")],
+        )?;
+        
+        let response = self.http_client
+            .post(&url)
+            .header("authorization", auth_header)
+            .header("date", RequestSigner::get_date_header())
+            .header("content-type", "application/json")
+            .body(body)
+            .send()
+            .await?;
+        
+        Self::handle_response(response).await
     }
     
     /// Get instance details
@@ -75,28 +83,19 @@ impl ComputeClient {
         let auth_header = self.signer.sign_request(
             "GET",
             &path,
-            &format!("iaas.{}.oraclecloud.com", self.region),
+            &self.host(),
             None,
             &[],
         )?;
         
-        let date_header = RequestSigner::get_date_header();
-        
         let response = self.http_client
             .get(&url)
             .header("authorization", auth_header)
-            .header("date", date_header)
+            .header("date", RequestSigner::get_date_header())
             .send()
             .await?;
         
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await?;
-            return Err(format!("API error {}: {}", status, error_text).into());
-        }
-        
-        let instance: Instance = response.json().await?;
-        Ok(instance)
+        Self::handle_response(response).await
     }
     
     /// Terminate an instance

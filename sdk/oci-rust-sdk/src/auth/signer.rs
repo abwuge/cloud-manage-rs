@@ -20,12 +20,10 @@ impl RequestSigner {
         let key_id = config.key_id()?;
         let private_key_pem = config.private_key()?;
 
-        // Parse PEM - only decode the first PEM block, ignore any trailing content
-        // This matches Oracle Go SDK behavior which uses pem.Decode()
+        // Parse PEM and try both PKCS#1 and PKCS#8 formats
         let pem_data = pem::parse(&private_key_pem)
             .map_err(|e| AuthError::CryptoError(format!("Failed to parse PEM: {}", e)))?;
 
-        // Try PKCS#1 format first (BEGIN RSA PRIVATE KEY), then PKCS#8 (BEGIN PRIVATE KEY)
         let private_key = RsaPrivateKey::from_pkcs1_der(&pem_data.contents())
             .or_else(|_| RsaPrivateKey::from_pkcs8_der(&pem_data.contents()))
             .map_err(|e| AuthError::CryptoError(format!("Failed to parse private key: {}", e)))?;
@@ -47,7 +45,6 @@ impl RequestSigner {
     ) -> Result<String> {
         let date = Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
 
-        // Build signing string - MUST match Go SDK format exactly
         let mut signing_headers = vec![
             "(request-target)".to_string(),
             "host".to_string(),
@@ -69,15 +66,11 @@ impl RequestSigner {
             hasher.update(body_bytes);
             let content_sha256 = BASE64.encode(hasher.finalize());
 
-            // Add content-length first, then content-type, then x-content-sha256
-            // This matches Go SDK's defaultBodyHeaders order
             signing_string.push_str(&format!("\ncontent-length: {}", content_length));
             signing_headers.push("content-length".to_string());
 
-            // Add content-type if present in headers
             for (key, value) in headers {
-                let key_lower = key.to_lowercase();
-                if key_lower == "content-type" {
+                if key.to_lowercase() == "content-type" {
                     signing_string.push_str(&format!("\ncontent-type: {}", value));
                     signing_headers.push("content-type".to_string());
                     break;
@@ -88,15 +81,11 @@ impl RequestSigner {
             signing_headers.push("x-content-sha256".to_string());
         }
 
-        // Sign the COMPLETE signing string (not a pre-computed hash!)
-        // Python SDK: self._rsa_private.sign(data, padding.PKCS1v15(), SHA256())
-        // Java SDK: Signature.getInstance("SHA256withRSA").sign(stringToSign.getBytes())
-        // This automatically: 1) hashes the data, 2) adds DigestInfo, 3) applies PKCS#1 v1.5 padding
+        // Sign using PKCS#1 v1.5 with SHA256
         let signing_key = SigningKey::<Sha256>::new(self.private_key.clone());
         let signature = signing_key.sign(signing_string.as_bytes());
         let signature_b64 = BASE64.encode(signature.to_vec());
 
-        // Build Authorization header - exact format from Go SDK
         let auth_header = format!(
             r#"Signature version="1",headers="{}",keyId="{}",algorithm="rsa-sha256",signature="{}""#,
             signing_headers.join(" "),
