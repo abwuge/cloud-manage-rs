@@ -6,9 +6,9 @@ use std::path::Path;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== OCI SDK Connection Test ===\n");
     
-    // Load configuration
-    println!("Loading configuration from ./oci_config...");
-    let config = FileConfigProvider::from_file(Path::new("./oci_config"), "DEFAULT")?;
+    // Load configuration from config/oci_config
+    println!("Loading configuration from ./config/oci_config...");
+    let config = FileConfigProvider::from_file(Path::new("./config/oci_config"), "DEFAULT")?;
     
     println!("✓ Configuration loaded successfully");
     println!("  Region: {}", config.region()?);

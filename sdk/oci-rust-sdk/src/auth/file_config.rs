@@ -53,9 +53,12 @@ impl FileConfigProvider {
             .ok_or_else(|| AuthError::InvalidConfig("Missing 'key_file' field".to_string()))?;
 
         let key_path = Self::expand_path(&key_file);
-        let private_key = fs::read_to_string(&key_path).map_err(|e| {
+        let mut private_key = fs::read_to_string(&key_path).map_err(|e| {
             AuthError::ConfigNotFound(format!("Failed to read private key file: {}", e))
         })?;
+        
+        // Trim whitespace from key content
+        private_key = private_key.trim().to_string();
 
         let passphrase = conf.get(profile, "pass_phrase");
 

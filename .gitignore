@@ -1,6 +1,9 @@
 # Build artifacts
 /target
 
+# OCI credentials
+/config/
+
 # Submodules
 .github/
 .gitmodules
