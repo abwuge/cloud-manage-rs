@@ -1,0 +1,6 @@
+# Build artifacts
+/target
+
+# Submodules
+.github/
+.gitmodules

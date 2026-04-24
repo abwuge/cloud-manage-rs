@@ -1,0 +1,6 @@
+[package]
+name = "cloud-manage"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
