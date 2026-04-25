@@ -1,5 +1,5 @@
-use crate::config::InstanceConfigFile;
-use crate::ghost_input::ghost_input;
+use crate::config::{InstanceConfigFile, InstanceSettings, NetworkSettings, OracleConfig};
+use crate::ui::ghost_input::ghost_input;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use oci_rust_sdk::compute::ComputeClient;
 use oci_rust_sdk::compute::models::{AvailabilityDomain, Image, Subnet};
@@ -267,7 +267,7 @@ impl ConfigWizard {
 
         let config = InstanceConfigFile {
             oci: default_config.oci.clone(),
-            oracle: crate::config::OracleConfig {
+            oracle: OracleConfig {
                 compartment_id,
                 availability_domain,
                 subnet_id,
@@ -275,14 +275,14 @@ impl ConfigWizard {
                 image_id_arm,
                 ssh_public_key,
             },
-            instance: crate::config::InstanceSettings {
+            instance: InstanceSettings {
                 instance_type,
                 display_name,
                 arm_ocpus,
                 arm_memory_gb,
                 boot_volume_size_gb,
             },
-            network: crate::config::NetworkSettings {
+            network: NetworkSettings {
                 assign_public_ip,
                 assign_ipv6,
                 private_ip,
