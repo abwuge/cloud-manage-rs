@@ -81,9 +81,9 @@ async fn run_command(cmd: Command) -> Result<(), Box<dyn std::error::Error + Sen
             let config = config::load_existing_config()?;
             instance::handle_create_command(&config).await?;
         }
-        Command::Snipe { min_delay, max_delay, max_attempts, save } => {
+        Command::Snipe { min_delay, max_delay, max_attempts, save, bypass } => {
             let config = config::load_existing_config()?;
-            instance::handle_snipe_command(&config, min_delay, max_delay, max_attempts, save).await?;
+            instance::handle_snipe_command(&config, min_delay, max_delay, max_attempts, save, bypass).await?;
         }
         Command::Reconfigure => {
             let new_config = config::reconfigure_full().await?;

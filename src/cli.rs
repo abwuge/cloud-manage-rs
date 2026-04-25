@@ -19,6 +19,8 @@ pub enum Command {
         max_attempts: Option<u32>,
         #[arg(long)]
         save: bool,
+        #[arg(long)]
+        bypass: bool,
     },
     ShowConfig,
     Reconfigure,

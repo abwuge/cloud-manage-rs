@@ -57,7 +57,7 @@ pub async fn snipe_instance_interactive(config: &InstanceConfigFile) -> Result<(
 
     maybe_save_snipe_config(config, min_delay, max_delay, max_attempts)?;
 
-    snipe_instance(config, min_delay, max_delay, max_attempts, true).await
+    snipe_instance(config, min_delay, max_delay, max_attempts, true, false).await
 }
 
 fn maybe_save_snipe_config(
@@ -90,8 +90,12 @@ pub async fn snipe_instance(
     max_delay: f64,
     max_attempts: u32,
     pause_at_end: bool,
+    bypass: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("\n🎯 Snipe Mode: keep retrying until an instance is launched");
+    if bypass {
+        println!("   ⚠️  Bypass mode enabled: all errors will be retried");
+    }
     println!("   (Ctrl+C to stop at any time)\n");
 
     let (min_delay, max_delay) = if min_delay <= max_delay {
@@ -116,7 +120,7 @@ pub async fn snipe_instance(
             Err(e) => {
                 let raw: String = e.to_string();
                 let pretty = humanize_oci_error(&raw);
-                if is_retryable_oci_error(&raw) {
+                if bypass || is_retryable_oci_error(&raw) {
                     println!("   ✖ {}", pretty);
                 } else {
                     println!("   ✖ {} (non-retryable)", pretty);
@@ -171,6 +175,7 @@ pub async fn handle_snipe_command(
     max_delay: Option<f64>,
     max_attempts: Option<u32>,
     save: bool,
+    bypass: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let min = min_delay.unwrap_or(config.snipe.min_delay_secs);
     let max = max_delay.unwrap_or(config.snipe.max_delay_secs);
@@ -183,6 +188,6 @@ pub async fn handle_snipe_command(
         updated.save_to_file(CONFIG_FILE)?;
         println!("💾 Snipe settings saved to {}", CONFIG_FILE);
     }
-    snipe_instance(config, min, max, attempts, false).await?;
+    snipe_instance(config, min, max, attempts, false, bypass).await?;
     Ok(())
 }
