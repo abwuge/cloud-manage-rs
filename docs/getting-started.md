@@ -71,7 +71,35 @@ After the wizard you reach the main menu:
 | View Current Config | Print the active configuration. |
 | Exit | Quit. |
 
-## 7. Updating Configuration
+## 7. Non-Interactive CLI
+
+For scripting / cron / sniping in the background, every menu option also has
+a direct subcommand. When a subcommand is given the interactive menu is
+skipped and the program exits when the action finishes. The config file
+(`./config/config`) must already exist — these commands will not launch the
+wizard automatically.
+
+```bash
+cloud-manage --help                    # list commands
+cloud-manage show-config               # print the active configuration
+cloud-manage create                    # launch one instance
+cloud-manage snipe                     # retry until success (defaults: 5..30s, unlimited)
+cloud-manage snipe --min-delay 3 --max-delay 10 --max-attempts 100
+cloud-manage reconfigure               # run the full wizard
+cloud-manage quick-config              # run the instance-only wizard
+```
+
+When invoked through `cargo run`, separate cargo's own arguments from the
+binary's arguments with `--`:
+
+```bash
+cargo run -- snipe --min-delay 3 --max-delay 10
+```
+
+Running `cloud-manage` with no subcommand still drops you into the
+interactive menu described above.
+
+## 8. Updating Configuration
 
 Three ways:
 

@@ -31,13 +31,18 @@ Infrastructure.
 ## Quick Start
 
 ```bash
-cargo run
+cargo run                              # interactive menu (runs wizard if needed)
+cargo run -- show-config               # non-interactive: print current config
+cargo run -- create                    # non-interactive: launch one instance
+cargo run -- snipe --min-delay 3 --max-delay 10
 ```
 
 The wizard walks through everything needed to create your first instance.
 The main menu also offers a **Snipe Mode** that retries creation with
-randomized backoff — useful when Always Free capacity is exhausted.
-See [Getting Started](docs/getting-started.md) for details.
+randomized backoff — useful when Always Free capacity is exhausted. The
+same actions are available as CLI subcommands for scripting; see
+[Getting Started](docs/getting-started.md#7-non-interactive-cli) for the
+full list.
 
 ## Development
 
