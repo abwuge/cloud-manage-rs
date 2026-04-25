@@ -45,6 +45,8 @@ for domain in domains {
 
 List all images available in a compartment.
 
+**Note:** Without filters, this API returns a limited set of "featured" platform images (typically ~100 images, mostly Windows). To get complete image lists for specific operating systems, use `list_images_filtered()` instead.
+
 **Parameters:**
 - `compartment_id` - Compartment OCID
 
@@ -57,6 +59,56 @@ for image in images {
     println!("Image: {} - {}", 
         image.display_name.unwrap_or_default(),
         image.operating_system.unwrap_or_default()
+    );
+}
+```
+
+### `list_images_filtered(&self, compartment_id: &str, operating_system: Option<&str>, operating_system_version: Option<&str>) -> Result<Vec<Image>>`
+
+List images with optional filters for operating system and version. This is the recommended way to get complete image lists.
+
+**Parameters:**
+- `compartment_id` - Compartment OCID
+- `operating_system` - Optional OS filter (e.g., "Oracle Linux", "Canonical Ubuntu", "Windows")
+- `operating_system_version` - Optional OS version filter (e.g., "8", "9", "22.04")
+
+**Returns:** `Result<Vec<Image>, Box<dyn std::error::Error>>`
+
+**Supported Operating Systems:**
+- "Oracle Linux" - Oracle's Linux distribution
+- "Canonical Ubuntu" - Ubuntu images
+- "Windows" - Windows Server images
+- "CentOS" - CentOS images
+- "Red Hat Enterprise Linux" - RHEL (requires subscription)
+
+**Example:**
+```rust
+// Get all Oracle Linux images
+let ol_images = client.list_images_filtered(
+    &compartment_id,
+    Some("Oracle Linux"),
+    None
+).await?;
+
+// Get Oracle Linux 9 images only
+let ol9_images = client.list_images_filtered(
+    &compartment_id,
+    Some("Oracle Linux"),
+    Some("9")
+).await?;
+
+// Get all Ubuntu images
+let ubuntu_images = client.list_images_filtered(
+    &compartment_id,
+    Some("Canonical Ubuntu"),
+    None
+).await?;
+
+for image in ol9_images {
+    println!("Image: {} - {} {}", 
+        image.display_name.unwrap_or_default(),
+        image.operating_system.unwrap_or_default(),
+        image.operating_system_version.unwrap_or_default()
     );
 }
 ```

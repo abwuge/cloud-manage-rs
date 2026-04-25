@@ -166,7 +166,28 @@ impl ComputeClient {
         &self,
         compartment_id: &str,
     ) -> Result<Vec<Image>, Box<dyn std::error::Error>> {
-        let path = format!("/20160918/images?compartmentId={}", compartment_id);
+        self.list_images_filtered(compartment_id, None, None).await
+    }
+    
+    /// List images in a compartment with optional filters
+    pub async fn list_images_filtered(
+        &self,
+        compartment_id: &str,
+        operating_system: Option<&str>,
+        operating_system_version: Option<&str>,
+    ) -> Result<Vec<Image>, Box<dyn std::error::Error>> {
+        let mut query_params = vec![format!("compartmentId={}", compartment_id)];
+        
+        if let Some(os) = operating_system {
+            query_params.push(format!("operatingSystem={}", urlencoding::encode(os)));
+        }
+        
+        if let Some(version) = operating_system_version {
+            query_params.push(format!("operatingSystemVersion={}", urlencoding::encode(version)));
+        }
+        
+        let query_string = query_params.join("&");
+        let path = format!("/20160918/images?{}", query_string);
         let url = format!("{}{}", self.endpoint(), path);
 
         let auth_header = self.signer.sign_request("GET", &path, &self.host(), None, &[])?;

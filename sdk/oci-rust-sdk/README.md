@@ -48,6 +48,9 @@ cargo run --example getting_started
 
 # List resources and create instance
 cargo run --example create_instance
+
+# List all available images (hierarchical view)
+cargo run --example list_images
 ```
 
 ## Documentation
