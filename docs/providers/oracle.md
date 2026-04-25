@@ -7,21 +7,27 @@ generic flow (wizard, menu, file layout) see
 
 ## Auth Setup
 
-The program reads OCI auth from `./config/oci_config` in standard OCI INI
-format:
+OCI auth lives in the `[oci]` section of the unified config
+`./config/config`:
 
-```ini
-[DEFAULT]
-user        = ocid1.user.oc1..your-user-id
-fingerprint = your-fingerprint
-tenancy     = ocid1.tenancy.oc1..your-tenancy-id
-region      = your-region
-key_file    = ./config/oci_api_key.pem
+```toml
+[oci]
+user        = "ocid1.user.oc1..your-user-id"
+fingerprint = "your-fingerprint"
+tenancy     = "ocid1.tenancy.oc1..your-tenancy-id"
+region      = "your-region"
+key_file    = "./config/oci_api_key.pem"
+# passphrase = "..."   # optional
 ```
 
-Generate / fetch these values from the OCI Console
-(Identity & Security → Users → API Keys). Place the matching private key at
-`./config/oci_api_key.pem`.
+Fetch these values from the OCI Console
+(Identity & Security → Users → API Keys). Place the matching private key
+file somewhere readable by the program and point `key_file` at it.
+
+If you upgraded from an earlier version that used the split
+`./config/oci_config` + `./config/instance_config.toml` files, the unified
+file is created automatically on first run — see
+[Legacy Migration](../configuration.md#legacy-migration).
 
 ## Supported Resources
 
@@ -57,11 +63,11 @@ The program is currently optimised for Always Free shapes:
 
 ## Configuration Block
 
-The `[oracle]` section in `instance_config.toml`:
+The `[oracle]` section in `./config/config`:
 
 | Field | Description |
 | --- | --- |
-| `compartment_id` | Compartment OCID. Defaults to the tenancy from `oci_config`. |
+| `compartment_id` | Compartment OCID. Defaults to the `tenancy` from `[oci]`. |
 | `availability_domain` | AD name, e.g. `Uocm:PHX-AD-1`. |
 | `subnet_id` | Subnet OCID; the subnet's CIDR (and IPv6 CIDR if any) is read at create time. |
 | `image_id_amd` | Image OCID used when `instance_type = "amd"`. |
@@ -73,8 +79,8 @@ The `[oracle]` section in `instance_config.toml`:
 These items are picked from API listings inside the wizard, so you usually
 do not need to copy OCIDs from the console:
 
-- **Compartment** — the wizard's default is the tenancy OCID read from
-  `oci_config`. Override only if you want a sub-compartment.
+- **Compartment** — the wizard's default is the `tenancy` from `[oci]`.
+  Override only if you want a sub-compartment.
 - **Availability Domain** — listed for the chosen compartment.
 - **Subnet** — listed for the chosen compartment, with CIDR shown inline.
   If you have no VCN/subnet yet, create one first via the OCI Console:

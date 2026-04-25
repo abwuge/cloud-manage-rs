@@ -6,7 +6,7 @@ Top-level index of cloud-manage-rs documentation.
 
 - [Getting Started](getting-started.md) — install, run, first instance.
 - [Configuration Reference](configuration.md) — TOML schema for
-  `instance_config.toml` and the wizard's input model.
+  `./config/config` and the wizard's input model.
 
 ## Providers
 

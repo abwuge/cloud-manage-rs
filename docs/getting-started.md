@@ -24,7 +24,8 @@ Follow the auth setup in your provider's guide:
 
 - [Oracle Cloud Infrastructure](providers/oracle.md#auth-setup)
 
-For OCI specifically, the program expects auth at `./config/oci_config`.
+For OCI specifically, auth is provided through the `[oci]` section of
+`./config/config` (see the Oracle guide for the field list).
 
 ## 4. Run
 
@@ -32,8 +33,10 @@ For OCI specifically, the program expects auth at `./config/oci_config`.
 cargo run
 ```
 
-If `./config/instance_config.toml` does not exist (or fails to parse), the
-configuration wizard runs automatically.
+If `./config/config` does not exist (or fails to parse), the configuration
+wizard runs automatically. (If you upgraded from an earlier version that
+used split files, they are migrated on first run — see
+[Legacy Migration](configuration.md#legacy-migration).)
 
 ## 5. The Configuration Wizard
 
@@ -73,7 +76,7 @@ After the wizard you reach the main menu:
 Three ways:
 
 1. Pick "Reconfigure" or "Quick Config" inside the program.
-2. Edit `./config/instance_config.toml` by hand.
+2. Edit `./config/config` by hand.
 3. Delete the file and run again to regenerate from scratch.
 
 Invalid items in the config file (placeholders, malformed OCIDs, fetch
