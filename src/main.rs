@@ -28,15 +28,18 @@ enum Command {
     Create,
     /// Keep retrying until an instance is launched
     Snipe {
-        /// Min delay between attempts (seconds)
-        #[arg(long, default_value_t = 5.0)]
-        min_delay: f64,
-        /// Max delay between attempts (seconds)
-        #[arg(long, default_value_t = 30.0)]
-        max_delay: f64,
-        /// Max attempts (0 = unlimited)
-        #[arg(long, default_value_t = 0)]
-        max_attempts: u32,
+        /// Min delay between attempts (seconds). Falls back to config.
+        #[arg(long)]
+        min_delay: Option<f64>,
+        /// Max delay between attempts (seconds). Falls back to config.
+        #[arg(long)]
+        max_delay: Option<f64>,
+        /// Max attempts (0 = unlimited). Falls back to config.
+        #[arg(long)]
+        max_attempts: Option<u32>,
+        /// Persist the supplied values back to the config file.
+        #[arg(long)]
+        save: bool,
     },
     /// Show the current configuration
     ShowConfig,
@@ -178,6 +181,18 @@ fn display_config(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error:
     if let Some(host) = &config.network.hostname_label {
         println!("  Hostname:     {}", host);
     }
+
+    println!("\n🔹 Snipe Config:");
+    println!("  Min delay:    {}s", config.snipe.min_delay_secs);
+    println!("  Max delay:    {}s", config.snipe.max_delay_secs);
+    println!(
+        "  Max attempts: {}",
+        if config.snipe.max_attempts == 0 {
+            "unlimited".to_string()
+        } else {
+            config.snipe.max_attempts.to_string()
+        }
+    );
     println!();
 
     Ok(())
@@ -208,20 +223,56 @@ async fn create_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std:
 }
 
 async fn snipe_instance_interactive(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let snipe = &config.snipe;
     let min_delay = parse_positive_f64(
-        &ghost_input("Min delay between attempts (seconds)", "", "5")?,
-        5.0,
+        &ghost_input(
+            "Min delay between attempts (seconds)",
+            "",
+            &format_secs(snipe.min_delay_secs),
+        )?,
+        snipe.min_delay_secs,
     );
     let max_delay = parse_positive_f64(
-        &ghost_input("Max delay between attempts (seconds)", "", "30")?,
-        30.0,
+        &ghost_input(
+            "Max delay between attempts (seconds)",
+            "",
+            &format_secs(snipe.max_delay_secs),
+        )?,
+        snipe.max_delay_secs,
     );
-    let max_attempts: u32 = ghost_input("Max attempts (0 = unlimited)", "", "0")?
-        .trim()
-        .parse()
-        .unwrap_or(0);
+    let max_attempts: u32 = ghost_input(
+        "Max attempts (0 = unlimited)",
+        "",
+        &snipe.max_attempts.to_string(),
+    )?
+    .trim()
+    .parse()
+    .unwrap_or(snipe.max_attempts);
+
+    if min_delay != snipe.min_delay_secs
+        || max_delay != snipe.max_delay_secs
+        || max_attempts != snipe.max_attempts
+    {
+        let mut updated = config.clone();
+        updated.snipe.min_delay_secs = min_delay;
+        updated.snipe.max_delay_secs = max_delay;
+        updated.snipe.max_attempts = max_attempts;
+        if let Err(e) = updated.save_to_file(CONFIG_FILE) {
+            println!("⚠️  Failed to persist snipe settings: {}", e);
+        } else {
+            println!("💾 Snipe settings saved to {}", CONFIG_FILE);
+        }
+    }
 
     snipe_instance(config, min_delay, max_delay, max_attempts, true).await
+}
+
+fn format_secs(v: f64) -> String {
+    if (v.fract()).abs() < f64::EPSILON {
+        format!("{}", v as i64)
+    } else {
+        format!("{}", v)
+    }
 }
 
 async fn snipe_instance(
@@ -303,9 +354,20 @@ async fn run_command(cmd: Command) -> Result<(), Box<dyn std::error::Error + Sen
                 }
             }
         }
-        Command::Snipe { min_delay, max_delay, max_attempts } => {
+        Command::Snipe { min_delay, max_delay, max_attempts, save } => {
             let config = load_existing_config()?;
-            snipe_instance(&config, min_delay, max_delay, max_attempts, false).await?;
+            let min = min_delay.unwrap_or(config.snipe.min_delay_secs);
+            let max = max_delay.unwrap_or(config.snipe.max_delay_secs);
+            let attempts = max_attempts.unwrap_or(config.snipe.max_attempts);
+            if save {
+                let mut updated = config.clone();
+                updated.snipe.min_delay_secs = min;
+                updated.snipe.max_delay_secs = max;
+                updated.snipe.max_attempts = attempts;
+                updated.save_to_file(CONFIG_FILE)?;
+                println!("💾 Snipe settings saved to {}", CONFIG_FILE);
+            }
+            snipe_instance(&config, min, max, attempts, false).await?;
         }
         Command::Reconfigure => {
             let new_config = reconfigure_full().await?;

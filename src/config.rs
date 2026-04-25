@@ -48,6 +48,25 @@ pub struct InstanceConfigFile {
     pub oracle: OracleConfig,
     pub instance: InstanceSettings,
     pub network: NetworkSettings,
+    #[serde(default)]
+    pub snipe: SnipeSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnipeSettings {
+    pub min_delay_secs: f64,
+    pub max_delay_secs: f64,
+    pub max_attempts: u32,
+}
+
+impl Default for SnipeSettings {
+    fn default() -> Self {
+        Self {
+            min_delay_secs: 5.0,
+            max_delay_secs: 30.0,
+            max_attempts: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +129,7 @@ impl Default for InstanceConfigFile {
                 ipv6_address: None,
                 hostname_label: None,
             },
+            snipe: SnipeSettings::default(),
         }
     }
 }

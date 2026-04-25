@@ -289,6 +289,7 @@ impl ConfigWizard {
                 ipv6_address,
                 hostname_label,
             },
+            snipe: default_config.snipe.clone(),
         };
 
         println!("\n📝 Configuration Summary");
