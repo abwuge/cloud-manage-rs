@@ -23,7 +23,7 @@ struct ImageInfo {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("=== OCI Image Hierarchical List ===\n");
     
     // Load configuration

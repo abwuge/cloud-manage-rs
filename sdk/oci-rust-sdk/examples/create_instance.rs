@@ -18,7 +18,7 @@ use std::path::Path;
 /// - OCI_SUBNET_ID: Subnet ID for networking
 /// - OCI_INSTANCE_NAME: Name for the new instance
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Load configuration from environment variables
     let config_file = env::var("OCI_CONFIG_FILE")
         .unwrap_or_else(|_| format!("{}/.oci/config", env::var("HOME").unwrap()));

@@ -12,7 +12,7 @@ use std::path::Path;
 /// Optional variables for testing:
 /// - OCI_TEST_INSTANCE_ID: Instance ID to test (optional, uses fake ID if not set)
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("=== OCI SDK Connection Test ===\n");
     
     // Load configuration from environment variables

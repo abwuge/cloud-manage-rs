@@ -10,7 +10,7 @@ pub struct ComputeClient {
 
 impl ComputeClient {
     /// Create a new compute client
-    pub fn new(config: &dyn ConfigurationProvider) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(config: &dyn ConfigurationProvider) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let region = config.region()?;
         let signer = RequestSigner::new(config)?;
         
@@ -34,7 +34,7 @@ impl ComputeClient {
     /// Handle API response errors
     async fn handle_response<T: serde::de::DeserializeOwned>(
         response: reqwest::Response,
-    ) -> Result<T, Box<dyn std::error::Error>> {
+    ) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await?;
@@ -51,7 +51,7 @@ impl ComputeClient {
         path: &str,
         body: Option<&[u8]>,
         headers: &[(&str, &str)],
-    ) -> Result<reqwest::RequestBuilder, Box<dyn std::error::Error>> {
+    ) -> Result<reqwest::RequestBuilder, Box<dyn std::error::Error + Send + Sync>> {
         let (auth_header, additional_headers) = self.signer.sign_request(
             method,
             path,
@@ -80,7 +80,7 @@ impl ComputeClient {
     pub async fn launch_instance(
         &self,
         details: &LaunchInstanceDetails,
-    ) -> Result<Instance, Box<dyn std::error::Error>> {
+    ) -> Result<Instance, Box<dyn std::error::Error + Send + Sync>> {
         let path = "/20160918/instances";
         let url = format!("{}{}", self.endpoint(), path);
         let body = serde_json::to_vec(details)?;
@@ -104,8 +104,23 @@ impl ComputeClient {
     pub async fn get_instance(
         &self,
         instance_id: &str,
-    ) -> Result<Instance, Box<dyn std::error::Error>> {
+    ) -> Result<Instance, Box<dyn std::error::Error + Send + Sync>> {
         let path = format!("/20160918/instances/{}", instance_id);
+        let url = format!("{}{}", self.endpoint(), path);
+        
+        let response = self.build_signed_request("GET", &url, &path, None, &[])?
+            .send()
+            .await?;
+        
+        Self::handle_response(response).await
+    }
+    
+    /// Get image details
+    pub async fn get_image(
+        &self,
+        image_id: &str,
+    ) -> Result<Image, Box<dyn std::error::Error + Send + Sync>> {
+        let path = format!("/20160918/images/{}", image_id);
         let url = format!("{}{}", self.endpoint(), path);
         
         let response = self.build_signed_request("GET", &url, &path, None, &[])?
@@ -119,7 +134,7 @@ impl ComputeClient {
     pub async fn terminate_instance(
         &self,
         instance_id: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let path = format!("/20160918/instances/{}", instance_id);
         let url = format!("{}{}", self.endpoint(), path);
         
@@ -140,7 +155,7 @@ impl ComputeClient {
     pub async fn list_availability_domains(
         &self,
         compartment_id: &str,
-    ) -> Result<Vec<AvailabilityDomain>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<AvailabilityDomain>, Box<dyn std::error::Error + Send + Sync>> {
         let path = format!("/20160918/availabilityDomains?compartmentId={}", compartment_id);
         let url = format!("https://identity.{}.oraclecloud.com{}", self.region, path);
         let host = format!("identity.{}.oraclecloud.com", self.region);
@@ -162,7 +177,7 @@ impl ComputeClient {
     pub async fn list_images(
         &self,
         compartment_id: &str,
-    ) -> Result<Vec<Image>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Image>, Box<dyn std::error::Error + Send + Sync>> {
         self.list_images_filtered(compartment_id, None, None).await
     }
     
@@ -172,7 +187,7 @@ impl ComputeClient {
         compartment_id: &str,
         operating_system: Option<&str>,
         operating_system_version: Option<&str>,
-    ) -> Result<Vec<Image>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Image>, Box<dyn std::error::Error + Send + Sync>> {
         let mut query_params = vec![format!("compartmentId={}", compartment_id)];
         
         if let Some(os) = operating_system {
@@ -198,7 +213,7 @@ impl ComputeClient {
     pub async fn list_shapes(
         &self,
         compartment_id: &str,
-    ) -> Result<Vec<Shape>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Shape>, Box<dyn std::error::Error + Send + Sync>> {
         let path = format!("/20160918/shapes?compartmentId={}", compartment_id);
         let url = format!("{}{}", self.endpoint(), path);
 
@@ -213,7 +228,7 @@ impl ComputeClient {
     pub async fn list_vcns(
         &self,
         compartment_id: &str,
-    ) -> Result<Vec<Vcn>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Vcn>, Box<dyn std::error::Error + Send + Sync>> {
         let path = format!("/20160918/vcns?compartmentId={}", compartment_id);
         let url = format!("{}{}", self.endpoint(), path);
 
@@ -228,7 +243,7 @@ impl ComputeClient {
     pub async fn list_subnets(
         &self,
         compartment_id: &str,
-    ) -> Result<Vec<Subnet>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Subnet>, Box<dyn std::error::Error + Send + Sync>> {
         let path = format!("/20160918/subnets?compartmentId={}", compartment_id);
         let url = format!("{}{}", self.endpoint(), path);
 
