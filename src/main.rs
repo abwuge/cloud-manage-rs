@@ -305,7 +305,14 @@ async fn snipe_instance(
         match creator.create_instance(&instance_config).await {
             Ok(id) => break Ok(id),
             Err(e) => {
-                println!("   ✖ {}", humanize_oci_error(&e.to_string()));
+                let raw = e.to_string();
+                let pretty = humanize_oci_error(&raw);
+                if is_retryable_oci_error(&raw) {
+                    println!("   ✖ {}", pretty);
+                } else {
+                    println!("   ✖ {} (non-retryable)", pretty);
+                    break Err(format!("aborted on non-retryable error: {}", pretty));
+                }
             }
         }
 
@@ -429,6 +436,28 @@ fn humanize_oci_error(msg: &str) -> String {
         }
     }
     msg.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Classify an OCI error string as retryable. The SDK formats errors as
+/// `API error <STATUS> <reason>: <json-body>`. We retry on 429
+/// (TooManyRequests) and 5xx (InternalServerError / ServiceUnavailable —
+/// this is what "Out of host capacity" comes back as). Everything else
+/// (auth, validation, quota, conflict) is treated as fatal so the snipe
+/// loop fails fast on a misconfiguration instead of hammering the API.
+fn is_retryable_oci_error(msg: &str) -> bool {
+    if let Some(rest) = msg.strip_prefix("API error ") {
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(status) = digits.parse::<u16>() {
+            return status == 429 || (500..=599).contains(&status);
+        }
+    }
+    // Network / transport errors (no HTTP status) — treat as transient.
+    let lower = msg.to_lowercase();
+    lower.contains("timed out")
+        || lower.contains("timeout")
+        || lower.contains("connection")
+        || lower.contains("dns")
+        || lower.contains("reset by peer")
 }
 
 /// Cheap uniform-ish PRNG seeded from the system clock; good enough for
