@@ -61,7 +61,8 @@ After the wizard you reach the main menu:
 
 | Option | Description |
 | --- | --- |
-| Create Instance | Launch using the saved configuration. |
+| Create Instance | Launch once using the saved configuration. |
+| Snipe Instance | Retry creation in a loop with randomized backoff until it succeeds (or the configured attempt cap is hit). Useful when Always Free capacity is exhausted. |
 | Reconfigure | Run the full wizard again. |
 | Quick Config (Instance Only) | Edit only instance-level fields (shape, name, OCPUs, public IPv4). |
 | View Current Config | Print the active configuration. |

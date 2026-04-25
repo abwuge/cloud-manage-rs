@@ -133,9 +133,11 @@ Default users:
 
 Always Free capacity in the chosen AD is exhausted. Options:
 
-1. Try a different availability domain.
-2. Retry later.
-3. Upgrade to a paid account.
+1. Use **Snipe Mode** from the main menu to retry continuously with
+   randomized backoff.
+2. Try a different availability domain.
+3. Retry later.
+4. Upgrade to a paid account.
 
 ### Terminating instances
 

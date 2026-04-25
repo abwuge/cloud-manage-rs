@@ -35,6 +35,8 @@ cargo run
 ```
 
 The wizard walks through everything needed to create your first instance.
+The main menu also offers a **Snipe Mode** that retries creation with
+randomized backoff — useful when Always Free capacity is exhausted.
 See [Getting Started](docs/getting-started.md) for details.
 
 ## Development

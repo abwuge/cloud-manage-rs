@@ -4,10 +4,13 @@ mod providers;
 mod wizard;
 
 use config::InstanceConfigFile;
+use ghost_input::ghost_input;
 use providers::oracle::{InstanceConfig, OracleInstanceCreator};
 use wizard::ConfigWizard;
 use dialoguer::{theme::ColorfulTheme, Select};
 use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::time::sleep;
 
 const CONFIG_FILE: &str = "./config/instance_config.toml";
 const OCI_CONFIG_FILE: &str = "./config/oci_config";
@@ -23,6 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
         let options = vec![
             "Create Instance",
+            "Snipe Instance (retry until success)",
             "Reconfigure",
             "Quick Config (Instance Only)",
             "View Current Config",
@@ -37,20 +41,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         
         match selection {
             0 => create_instance(&config).await?,
-            1 => {
+            1 => snipe_instance(&config).await?,
+            2 => {
                 let new_config = reconfigure_full().await?;
                 new_config.save_to_file(CONFIG_FILE)?;
                 println!("\n✅ Configuration saved. Please restart the program.");
                 break;
             }
-            2 => {
+            3 => {
                 let new_config = reconfigure_quick(&config).await?;
                 new_config.save_to_file(CONFIG_FILE)?;
                 println!("\n✅ Configuration saved. Please restart the program.");
                 break;
             }
-            3 => display_config(&config)?,
-            4 => {
+            4 => display_config(&config)?,
+            5 => {
                 println!("\n👋 Goodbye!");
                 break;
             }
@@ -147,17 +152,7 @@ async fn create_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std:
         return Err(format!("OCI config file not found: {}", OCI_CONFIG_FILE).into());
     }
     
-    let instance_config = if config.instance.instance_type == "amd" {
-        InstanceConfig::amd_micro(&config.instance.display_name)
-    } else {
-        let ocpus = config.instance.arm_ocpus.unwrap_or(2);
-        let memory = config.instance.arm_memory_gb.unwrap_or(12);
-        InstanceConfig::arm_flex(&config.instance.display_name, ocpus, memory)
-    }
-    .with_public_ip(config.network.assign_public_ip)
-    .with_boot_volume_size(config.instance.boot_volume_size_gb)
-    .with_tag("managed-by", "cloud-manage-rs");
-    
+    let instance_config = build_instance_config(config);
     let creator = OracleInstanceCreator::from_config(OCI_CONFIG_FILE, config.clone());
     
     match creator.create_and_wait(&instance_config, 300).await {
@@ -176,4 +171,121 @@ async fn create_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std:
     std::io::stdin().read_line(&mut input)?;
     
     Ok(())
+}
+
+async fn snipe_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    println!("\n🎯 Snipe Mode: keep retrying until an instance is launched");
+    println!("   (Ctrl+C to stop at any time)\n");
+
+    if !Path::new(OCI_CONFIG_FILE).exists() {
+        return Err(format!("OCI config file not found: {}", OCI_CONFIG_FILE).into());
+    }
+
+    let min_delay = parse_positive_f64(
+        &ghost_input("Min delay between attempts (seconds)", "", "5")?,
+        5.0,
+    );
+    let max_delay = parse_positive_f64(
+        &ghost_input("Max delay between attempts (seconds)", "", "30")?,
+        30.0,
+    );
+    let (min_delay, max_delay) = if min_delay <= max_delay {
+        (min_delay, max_delay)
+    } else {
+        (max_delay, min_delay)
+    };
+    let max_attempts: u32 = ghost_input("Max attempts (0 = unlimited)", "", "0")?
+        .trim()
+        .parse()
+        .unwrap_or(0);
+
+    let creator = OracleInstanceCreator::from_config(OCI_CONFIG_FILE, config.clone());
+    let instance_config = build_instance_config(config);
+
+    let mut attempt: u32 = 0;
+    let outcome = loop {
+        attempt += 1;
+        if max_attempts != 0 && attempt > max_attempts {
+            break Err(format!("reached max attempts ({})", max_attempts));
+        }
+
+        println!("\n[#{}] launching...", attempt);
+        match creator.create_instance(&instance_config).await {
+            Ok(id) => break Ok(id),
+            Err(e) => {
+                println!("   ✖ {}", humanize_oci_error(&e.to_string()));
+            }
+        }
+
+        let delay = random_in_range(min_delay, max_delay);
+        println!("   ⏳ retrying in {:.1}s...", delay);
+        sleep(Duration::from_secs_f64(delay)).await;
+    };
+
+    match outcome {
+        Ok(instance_id) => {
+            println!("\n✅ Snipe successful on attempt #{}!", attempt);
+            println!("📌 Instance ID: {}", instance_id);
+            println!("\nTip: Use OCI Console to view instance details and IP address");
+        }
+        Err(reason) => {
+            println!("\n⏹️  Stopped: {}", reason);
+        }
+    }
+
+    println!("\nPress Enter to continue...");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    Ok(())
+}
+
+fn build_instance_config(config: &InstanceConfigFile) -> InstanceConfig {
+    let base = if config.instance.instance_type == "amd" {
+        InstanceConfig::amd_micro(&config.instance.display_name)
+    } else {
+        let ocpus = config.instance.arm_ocpus.unwrap_or(2);
+        let memory = config.instance.arm_memory_gb.unwrap_or(12);
+        InstanceConfig::arm_flex(&config.instance.display_name, ocpus, memory)
+    };
+    base.with_public_ip(config.network.assign_public_ip)
+        .with_boot_volume_size(config.instance.boot_volume_size_gb)
+        .with_tag("managed-by", "cloud-manage-rs")
+}
+
+fn parse_positive_f64(s: &str, fallback: f64) -> f64 {
+    s.trim().parse::<f64>().ok().filter(|v| *v >= 0.0).unwrap_or(fallback)
+}
+
+/// Extract the meaningful piece of an OCI API error. The SDK formats errors
+/// as `API error <STATUS>: <json-body>`, where the body looks like
+/// `{ "code": "...", "message": "..." }`. We pull out `message (code)` when
+/// possible; otherwise we collapse the multi-line text into a single line.
+fn humanize_oci_error(msg: &str) -> String {
+    if let Some(start) = msg.find('{') {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg[start..]) {
+            let code = v.get("code").and_then(|s| s.as_str());
+            let message = v.get("message").and_then(|s| s.as_str());
+            return match (code, message) {
+                (Some(c), Some(m)) => format!("{} ({})", m, c),
+                (_, Some(m)) => m.to_string(),
+                (Some(c), _) => c.to_string(),
+                _ => msg.to_string(),
+            };
+        }
+    }
+    msg.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Cheap uniform-ish PRNG seeded from the system clock; good enough for
+/// jittering retry intervals (no security requirement).
+fn random_in_range(min: f64, max: f64) -> f64 {
+    if (max - min).abs() < f64::EPSILON {
+        return min;
+    }
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let r = (nanos as f64) / 1_000_000_000.0;
+    min + r * (max - min)
 }
