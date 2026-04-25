@@ -62,6 +62,23 @@ pub struct CreateVnicDetails {
     
     #[serde(skip_serializing_if = "Option::is_none")]
     pub private_ip: Option<String>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assign_ipv6ip: Option<bool>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ipv6address_ipv6subnet_cidr_pair_details: Option<Vec<Ipv6AddressDetails>>,
+}
+
+/// IPv6 address details
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ipv6AddressDetails {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ipv6address: Option<String>,
+    
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ipv6subnet_cidr: Option<String>,
 }
 
 /// Shape configuration details
@@ -166,6 +183,7 @@ pub struct Subnet {
     pub vcn_id: String,
     pub display_name: Option<String>,
     pub cidr_block: Option<String>,
+    pub ipv6_cidr_block: Option<String>,
     pub lifecycle_state: String,
     pub availability_domain: Option<String>,
 }
