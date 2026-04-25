@@ -7,20 +7,59 @@ use config::InstanceConfigFile;
 use ghost_input::ghost_input;
 use providers::oracle::{InstanceConfig, OracleInstanceCreator};
 use wizard::ConfigWizard;
+use clap::{Parser, Subcommand};
 use dialoguer::{theme::ColorfulTheme, Select};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;
 
 const CONFIG_FILE: &str = "./config/config";
 
+/// Oracle Cloud Instance Manager
+#[derive(Parser, Debug)]
+#[command(name = "cloud-manage", version, about = "Oracle Cloud Instance Manager", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Create an instance once using the saved config
+    Create,
+    /// Keep retrying until an instance is launched
+    Snipe {
+        /// Min delay between attempts (seconds)
+        #[arg(long, default_value_t = 5.0)]
+        min_delay: f64,
+        /// Max delay between attempts (seconds)
+        #[arg(long, default_value_t = 30.0)]
+        max_delay: f64,
+        /// Max attempts (0 = unlimited)
+        #[arg(long, default_value_t = 0)]
+        max_attempts: u32,
+    },
+    /// Show the current configuration
+    ShowConfig,
+    /// Run the full configuration wizard
+    Reconfigure,
+    /// Run the quick (instance-only) configuration wizard
+    QuickConfig,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let cli = Cli::parse();
+
+    if let Some(cmd) = cli.command {
+        return run_command(cmd).await;
+    }
+
     println!("\n╔════════════════════════════════════════╗");
     println!("║  Oracle Cloud Instance Manager         ║");
     println!("╚════════════════════════════════════════╝\n");
-    
+
     let config = load_or_create_config().await?;
-    
+
     loop {
         let options = vec![
             "Create Instance",
@@ -39,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         
         match selection {
             0 => create_instance(&config).await?,
-            1 => snipe_instance(&config).await?,
+            1 => snipe_instance_interactive(&config).await?,
             2 => {
                 let new_config = reconfigure_full().await?;
                 new_config.save_to_file(CONFIG_FILE)?;
@@ -168,10 +207,7 @@ async fn create_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std:
     Ok(())
 }
 
-async fn snipe_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    println!("\n🎯 Snipe Mode: keep retrying until an instance is launched");
-    println!("   (Ctrl+C to stop at any time)\n");
-
+async fn snipe_instance_interactive(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let min_delay = parse_positive_f64(
         &ghost_input("Min delay between attempts (seconds)", "", "5")?,
         5.0,
@@ -180,15 +216,29 @@ async fn snipe_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std::
         &ghost_input("Max delay between attempts (seconds)", "", "30")?,
         30.0,
     );
+    let max_attempts: u32 = ghost_input("Max attempts (0 = unlimited)", "", "0")?
+        .trim()
+        .parse()
+        .unwrap_or(0);
+
+    snipe_instance(config, min_delay, max_delay, max_attempts, true).await
+}
+
+async fn snipe_instance(
+    config: &InstanceConfigFile,
+    min_delay: f64,
+    max_delay: f64,
+    max_attempts: u32,
+    pause_at_end: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    println!("\n🎯 Snipe Mode: keep retrying until an instance is launched");
+    println!("   (Ctrl+C to stop at any time)\n");
+
     let (min_delay, max_delay) = if min_delay <= max_delay {
         (min_delay, max_delay)
     } else {
         (max_delay, min_delay)
     };
-    let max_attempts: u32 = ghost_input("Max attempts (0 = unlimited)", "", "0")?
-        .trim()
-        .parse()
-        .unwrap_or(0);
 
     let creator = OracleInstanceCreator::new(config.clone());
     let instance_config = build_instance_config(config);
@@ -224,10 +274,62 @@ async fn snipe_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std::
         }
     }
 
-    println!("\nPress Enter to continue...");
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
+    if pause_at_end {
+        println!("\nPress Enter to continue...");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+    }
     Ok(())
+}
+
+async fn run_command(cmd: Command) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match cmd {
+        Command::ShowConfig => {
+            let config = load_existing_config()?;
+            display_config(&config)?;
+        }
+        Command::Create => {
+            let config = load_existing_config()?;
+            let instance_config = build_instance_config(&config);
+            let creator = OracleInstanceCreator::new(config.clone());
+            match creator.create_and_wait(&instance_config, 300).await {
+                Ok(id) => {
+                    println!("\n✅ Instance created successfully!");
+                    println!("📌 Instance ID: {}", id);
+                }
+                Err(e) => {
+                    println!("\n❌ Instance creation failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Command::Snipe { min_delay, max_delay, max_attempts } => {
+            let config = load_existing_config()?;
+            snipe_instance(&config, min_delay, max_delay, max_attempts, false).await?;
+        }
+        Command::Reconfigure => {
+            let new_config = reconfigure_full().await?;
+            new_config.save_to_file(CONFIG_FILE)?;
+            println!("\n✅ Configuration saved.");
+        }
+        Command::QuickConfig => {
+            let config = load_existing_config()?;
+            let new_config = reconfigure_quick(&config).await?;
+            new_config.save_to_file(CONFIG_FILE)?;
+            println!("\n✅ Configuration saved.");
+        }
+    }
+    Ok(())
+}
+
+fn load_existing_config() -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
+    if !InstanceConfigFile::exists(CONFIG_FILE) {
+        return Err(format!(
+            "config file not found at {}. Run `cloud-manage reconfigure` first.",
+            CONFIG_FILE
+        ).into());
+    }
+    Ok(InstanceConfigFile::load_from_file(CONFIG_FILE)?)
 }
 
 fn build_instance_config(config: &InstanceConfigFile) -> InstanceConfig {
