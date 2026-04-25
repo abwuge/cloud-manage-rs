@@ -8,12 +8,12 @@ use ghost_input::ghost_input;
 use providers::oracle::{InstanceConfig, OracleInstanceCreator};
 use wizard::ConfigWizard;
 use dialoguer::{theme::ColorfulTheme, Select};
-use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;
 
-const CONFIG_FILE: &str = "./config/instance_config.toml";
-const OCI_CONFIG_FILE: &str = "./config/oci_config";
+const CONFIG_FILE: &str = "./config/config";
+const LEGACY_OCI_CONFIG: &str = "./config/oci_config";
+const LEGACY_INSTANCE_CONFIG: &str = "./config/instance_config.toml";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -67,6 +67,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 async fn load_or_create_config() -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
+    if !InstanceConfigFile::exists(CONFIG_FILE) {
+        match InstanceConfigFile::migrate_legacy(
+            CONFIG_FILE,
+            LEGACY_OCI_CONFIG,
+            LEGACY_INSTANCE_CONFIG,
+        ) {
+            Ok(true) => {
+                println!(
+                    "✨ Migrated legacy {} + {} into {}",
+                    LEGACY_INSTANCE_CONFIG, LEGACY_OCI_CONFIG, CONFIG_FILE
+                );
+            }
+            Ok(false) => {}
+            Err(e) => println!("⚠️  Legacy config migration failed: {}", e),
+        }
+    }
+
     if InstanceConfigFile::exists(CONFIG_FILE) {
         println!("📂 Loading config from: {}", CONFIG_FILE);
         match InstanceConfigFile::load_from_file(CONFIG_FILE) {
@@ -82,40 +99,31 @@ async fn load_or_create_config() -> Result<InstanceConfigFile, Box<dyn std::erro
     } else {
         println!("📝 Config file not found. Starting configuration wizard...\n");
     }
-    
-    if !Path::new(OCI_CONFIG_FILE).exists() {
-        return Err(format!(
-            "❌ OCI config file not found: {}\nPlease create OCI config file first",
-            OCI_CONFIG_FILE
-        ).into());
-    }
-    
-    let wizard = ConfigWizard::new(OCI_CONFIG_FILE);
+
+    let wizard = ConfigWizard::new();
     let default_config = InstanceConfigFile::default();
     let config = wizard.run(&default_config).await?;
-    
+
     config.save_to_file(CONFIG_FILE)?;
     println!("\n✅ Configuration saved to: {}", CONFIG_FILE);
-    
+
     Ok(config)
 }
 
 async fn reconfigure_full() -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
     println!("\n🔧 Full Reconfiguration");
-    
+
     let current_config = if InstanceConfigFile::exists(CONFIG_FILE) {
         InstanceConfigFile::load_from_file(CONFIG_FILE).unwrap_or_default()
     } else {
         InstanceConfigFile::default()
     };
-    
-    let wizard = ConfigWizard::new(OCI_CONFIG_FILE);
-    wizard.run(&current_config).await
+
+    ConfigWizard::new().run(&current_config).await
 }
 
 async fn reconfigure_quick(base_config: &InstanceConfigFile) -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
-    let wizard = ConfigWizard::new(OCI_CONFIG_FILE);
-    wizard.quick_config(base_config).await
+    ConfigWizard::new().quick_config(base_config).await
 }
 
 fn display_config(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -157,13 +165,9 @@ fn display_config(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error:
 
 async fn create_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("\n🚀 Creating instance...\n");
-    
-    if !Path::new(OCI_CONFIG_FILE).exists() {
-        return Err(format!("OCI config file not found: {}", OCI_CONFIG_FILE).into());
-    }
-    
+
     let instance_config = build_instance_config(config);
-    let creator = OracleInstanceCreator::from_config(OCI_CONFIG_FILE, config.clone());
+    let creator = OracleInstanceCreator::new(config.clone());
     
     match creator.create_and_wait(&instance_config, 300).await {
         Ok(instance_id) => {
@@ -187,10 +191,6 @@ async fn snipe_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std::
     println!("\n🎯 Snipe Mode: keep retrying until an instance is launched");
     println!("   (Ctrl+C to stop at any time)\n");
 
-    if !Path::new(OCI_CONFIG_FILE).exists() {
-        return Err(format!("OCI config file not found: {}", OCI_CONFIG_FILE).into());
-    }
-
     let min_delay = parse_positive_f64(
         &ghost_input("Min delay between attempts (seconds)", "", "5")?,
         5.0,
@@ -209,7 +209,7 @@ async fn snipe_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std::
         .parse()
         .unwrap_or(0);
 
-    let creator = OracleInstanceCreator::from_config(OCI_CONFIG_FILE, config.clone());
+    let creator = OracleInstanceCreator::new(config.clone());
     let instance_config = build_instance_config(config);
 
     let mut attempt: u32 = 0;

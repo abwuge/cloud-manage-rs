@@ -1,10 +1,8 @@
 use std::collections::HashMap;
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use tokio::time::sleep;
 
-use oci_rust_sdk::auth::FileConfigProvider;
 use oci_rust_sdk::compute::ComputeClient;
 use oci_rust_sdk::compute::models::{
     CreateVnicDetails, InstanceSourceDetails, Ipv6AddressDetails, LaunchInstanceDetails,
@@ -98,29 +96,24 @@ impl InstanceConfig {
 }
 
 pub struct OracleInstanceCreator {
-    config_path: String,
     instance_config: InstanceConfigFile,
 }
 
 impl OracleInstanceCreator {
-    pub fn from_config(
-        oci_config_path: impl Into<String>,
-        instance_config: InstanceConfigFile,
-    ) -> Self {
-        Self {
-            config_path: oci_config_path.into(),
-            instance_config,
-        }
+    pub fn new(instance_config: InstanceConfigFile) -> Self {
+        Self { instance_config }
     }
-    
+
+    fn make_client(&self) -> Result<ComputeClient, Box<dyn std::error::Error + Send + Sync>> {
+        ComputeClient::new(&self.instance_config.oci)
+    }
+
     pub async fn create_instance(
         &self,
         config: &InstanceConfig,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         config.instance_type.validate()?;
-
-        let auth_config = FileConfigProvider::from_file(Path::new(&self.config_path), "DEFAULT")?;
-        let client = ComputeClient::new(&auth_config)?;
+        let client = self.make_client()?;
 
         let boot_volume_size = config.boot_volume_size_gb
             .filter(|&size| size >= 50);
@@ -184,8 +177,7 @@ impl OracleInstanceCreator {
         instance_id: &str,
         max_wait_seconds: u64,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let auth_config = FileConfigProvider::from_file(Path::new(&self.config_path), "DEFAULT")?;
-        let client = ComputeClient::new(&auth_config)?;
+        let client = self.make_client()?;
 
         let start = Instant::now();
         let max_duration = Duration::from_secs(max_wait_seconds);

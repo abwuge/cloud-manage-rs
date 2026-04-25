@@ -1,22 +1,18 @@
 use crate::config::InstanceConfigFile;
 use crate::ghost_input::ghost_input;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
-use oci_rust_sdk::auth::{ConfigurationProvider, FileConfigProvider};
 use oci_rust_sdk::compute::ComputeClient;
 use oci_rust_sdk::compute::models::{AvailabilityDomain, Image, Subnet};
-use std::path::Path;
 use std::sync::Arc;
 
 pub struct ConfigWizard {
     theme: ColorfulTheme,
-    oci_config_path: String,
 }
 
 impl ConfigWizard {
-    pub fn new(oci_config_path: impl Into<String>) -> Self {
+    pub fn new() -> Self {
         Self {
             theme: ColorfulTheme::default(),
-            oci_config_path: oci_config_path.into(),
         }
     }
 
@@ -25,7 +21,7 @@ impl ConfigWizard {
         println!("================================\n");
 
         println!("🔄 Connecting to Oracle Cloud API...");
-        let client = Arc::new(self.create_client().await?);
+        let client = Arc::new(ComputeClient::new(&default_config.oci)?);
         println!("✅ Connected\n");
 
         // Most runs accept the default compartment (== tenancy), so prefetch with
@@ -270,6 +266,7 @@ impl ConfigWizard {
         };
 
         let config = InstanceConfigFile {
+            oci: default_config.oci.clone(),
             oracle: crate::config::OracleConfig {
                 compartment_id,
                 availability_domain,
@@ -317,26 +314,17 @@ impl ConfigWizard {
         Ok(config)
     }
 
-    /// Resolution order: valid config value -> tenancy from OCI auth -> raw default.
+    /// Resolution order: valid config value -> tenancy from OCI auth section -> raw default.
     fn candidate_compartment(&self, default_config: &InstanceConfigFile) -> String {
         if is_valid_ocid(&default_config.oracle.compartment_id, "compartment")
             || is_valid_ocid(&default_config.oracle.compartment_id, "tenancy")
         {
             return default_config.oracle.compartment_id.clone();
         }
-        if let Ok(auth_config) =
-            FileConfigProvider::from_file(Path::new(&self.oci_config_path), "DEFAULT")
-        {
-            if let Ok(tenancy) = auth_config.tenancy_id() {
-                return tenancy;
-            }
+        if !default_config.oci.tenancy.is_empty() {
+            return default_config.oci.tenancy.clone();
         }
         default_config.oracle.compartment_id.clone()
-    }
-
-    async fn create_client(&self) -> Result<ComputeClient, Box<dyn std::error::Error + Send + Sync>> {
-        let auth_config = FileConfigProvider::from_file(Path::new(&self.oci_config_path), "DEFAULT")?;
-        ComputeClient::new(&auth_config)
     }
 
     fn pick_availability_domain(
