@@ -139,9 +139,19 @@ fn display_config(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error:
     println!("  Boot Volume: {} GB", config.instance.boot_volume_size_gb);
     
     println!("\n🔹 Network Config:");
-    println!("  Public IP: {}", if config.network.assign_public_ip { "Yes" } else { "No" });
+    println!("  Public IPv4: {}", if config.network.assign_public_ip { "Yes" } else { "No" });
+    println!("  IPv6:        {}", if config.network.assign_ipv6 { "Yes" } else { "No" });
+    if let Some(ip) = &config.network.private_ip {
+        println!("  Private IPv4: {}", ip);
+    }
+    if let Some(ipv6) = &config.network.ipv6_address {
+        println!("  IPv6 Address: {}", ipv6);
+    }
+    if let Some(host) = &config.network.hostname_label {
+        println!("  Hostname:     {}", host);
+    }
     println!();
-    
+
     Ok(())
 }
 
