@@ -51,6 +51,11 @@ assign_ipv6         = true
 private_ip          = "10.0.0.11"                  # optional
 ipv6_address        = "2001:db8:1234:5678:11"      # optional
 hostname_label      = "my-host"                    # optional
+
+[snipe]
+min_delay_secs      = 5.0
+max_delay_secs      = 30.0
+max_attempts        = 0      # 0 = unlimited
 ```
 
 ### `[oci]`
@@ -83,6 +88,19 @@ Oracle-specific resource selection. Fields are documented in the
 | `private_ip` | optional string | Private IPv4 in the subnet's CIDR. Omit to let the provider pick. |
 | `ipv6_address` | optional string | Specific IPv6 in the subnet's IPv6 CIDR. Omit to auto-assign. |
 | `hostname_label` | optional string | DNS hostname label for the VNIC. |
+
+### `[snipe]`
+
+Defaults for snipe mode (retry-until-success). The interactive snipe menu
+uses these as the prompt defaults and persists any change back to the file;
+the `cloud-manage snipe` CLI uses them when the corresponding flag is
+omitted, and writes them back only when `--save` is passed.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `min_delay_secs` | float | Lower bound of the randomized delay between attempts. |
+| `max_delay_secs` | float | Upper bound. If lower than `min_delay_secs` the two are swapped. |
+| `max_attempts` | int | Stop after this many tries. `0` means unlimited. |
 
 ## Wizard Behaviour
 

@@ -83,8 +83,9 @@ wizard automatically.
 cloud-manage --help                    # list commands
 cloud-manage show-config               # print the active configuration
 cloud-manage create                    # launch one instance
-cloud-manage snipe                     # retry until success (defaults: 5..30s, unlimited)
+cloud-manage snipe                     # retry until success (uses [snipe] from config)
 cloud-manage snipe --min-delay 3 --max-delay 10 --max-attempts 100
+cloud-manage snipe --min-delay 3 --save  # also persist the override into config
 cloud-manage reconfigure               # run the full wizard
 cloud-manage quick-config              # run the instance-only wizard
 ```
