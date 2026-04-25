@@ -43,6 +43,39 @@ impl ComputeClient {
         Ok(response.json().await?)
     }
     
+    /// Build a signed request with additional headers
+    fn build_signed_request(
+        &self,
+        method: &str,
+        url: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        headers: &[(&str, &str)],
+    ) -> Result<reqwest::RequestBuilder, Box<dyn std::error::Error>> {
+        let (auth_header, additional_headers) = self.signer.sign_request(
+            method,
+            path,
+            &self.host(),
+            body,
+            headers,
+        )?;
+        
+        let mut request = match method {
+            "GET" => self.http_client.get(url),
+            "POST" => self.http_client.post(url),
+            "DELETE" => self.http_client.delete(url),
+            _ => return Err(format!("Unsupported HTTP method: {}", method).into()),
+        };
+        
+        request = request.header("authorization", auth_header);
+        
+        for (key, value) in additional_headers {
+            request = request.header(key, value);
+        }
+        
+        Ok(request)
+    }
+    
     /// Launch a new compute instance
     pub async fn launch_instance(
         &self,
@@ -52,22 +85,17 @@ impl ComputeClient {
         let url = format!("{}{}", self.endpoint(), path);
         let body = serde_json::to_vec(details)?;
         
-        let auth_header = self.signer.sign_request(
+        let response = self.build_signed_request(
             "POST",
+            &url,
             path,
-            &self.host(),
             Some(&body),
             &[("content-type", "application/json")],
-        )?;
-        
-        let response = self.http_client
-            .post(&url)
-            .header("authorization", auth_header)
-            .header("date", RequestSigner::get_date_header())
-            .header("content-type", "application/json")
-            .body(body)
-            .send()
-            .await?;
+        )?
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await?;
         
         Self::handle_response(response).await
     }
@@ -80,18 +108,7 @@ impl ComputeClient {
         let path = format!("/20160918/instances/{}", instance_id);
         let url = format!("{}{}", self.endpoint(), path);
         
-        let auth_header = self.signer.sign_request(
-            "GET",
-            &path,
-            &self.host(),
-            None,
-            &[],
-        )?;
-        
-        let response = self.http_client
-            .get(&url)
-            .header("authorization", auth_header)
-            .header("date", RequestSigner::get_date_header())
+        let response = self.build_signed_request("GET", &url, &path, None, &[])?
             .send()
             .await?;
         
@@ -106,20 +123,7 @@ impl ComputeClient {
         let path = format!("/20160918/instances/{}", instance_id);
         let url = format!("{}{}", self.endpoint(), path);
         
-        let auth_header = self.signer.sign_request(
-            "DELETE",
-            &path,
-            &format!("iaas.{}.oraclecloud.com", self.region),
-            None,
-            &[],
-        )?;
-        
-        let date_header = RequestSigner::get_date_header();
-        
-        let response = self.http_client
-            .delete(&url)
-            .header("authorization", auth_header)
-            .header("date", date_header)
+        let response = self.build_signed_request("DELETE", &url, &path, None, &[])?
             .send()
             .await?;
         
@@ -141,24 +145,17 @@ impl ComputeClient {
         let url = format!("https://identity.{}.oraclecloud.com{}", self.region, path);
         let host = format!("identity.{}.oraclecloud.com", self.region);
 
-        let auth_header = self.signer.sign_request("GET", &path, &host, None, &[])?;
+        let (auth_header, additional_headers) = self.signer.sign_request("GET", &path, &host, None, &[])?;
 
-        let response = self
-            .http_client
-            .get(&url)
-            .header("authorization", auth_header)
-            .header("date", RequestSigner::get_date_header())
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await?;
-            return Err(format!("API error {}: {}", status, error_text).into());
+        let mut request = self.http_client.get(&url).header("authorization", auth_header);
+        
+        for (key, value) in additional_headers {
+            request = request.header(key, value);
         }
+        
+        let response = request.send().await?;
 
-        let domains: Vec<AvailabilityDomain> = response.json().await?;
-        Ok(domains)
+        Self::handle_response(response).await
     }
 
     /// List images in a compartment
@@ -190,24 +187,11 @@ impl ComputeClient {
         let path = format!("/20160918/images?{}", query_string);
         let url = format!("{}{}", self.endpoint(), path);
 
-        let auth_header = self.signer.sign_request("GET", &path, &self.host(), None, &[])?;
-
-        let response = self
-            .http_client
-            .get(&url)
-            .header("authorization", auth_header)
-            .header("date", RequestSigner::get_date_header())
+        let response = self.build_signed_request("GET", &url, &path, None, &[])?
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await?;
-            return Err(format!("API error {}: {}", status, error_text).into());
-        }
-
-        let images: Vec<Image> = response.json().await?;
-        Ok(images)
+        Self::handle_response(response).await
     }
 
     /// List shapes available in a compartment
@@ -218,24 +202,11 @@ impl ComputeClient {
         let path = format!("/20160918/shapes?compartmentId={}", compartment_id);
         let url = format!("{}{}", self.endpoint(), path);
 
-        let auth_header = self.signer.sign_request("GET", &path, &self.host(), None, &[])?;
-
-        let response = self
-            .http_client
-            .get(&url)
-            .header("authorization", auth_header)
-            .header("date", RequestSigner::get_date_header())
+        let response = self.build_signed_request("GET", &url, &path, None, &[])?
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await?;
-            return Err(format!("API error {}: {}", status, error_text).into());
-        }
-
-        let shapes: Vec<Shape> = response.json().await?;
-        Ok(shapes)
+        Self::handle_response(response).await
     }
 
     /// List VCNs in a compartment
@@ -246,24 +217,11 @@ impl ComputeClient {
         let path = format!("/20160918/vcns?compartmentId={}", compartment_id);
         let url = format!("{}{}", self.endpoint(), path);
 
-        let auth_header = self.signer.sign_request("GET", &path, &self.host(), None, &[])?;
-
-        let response = self
-            .http_client
-            .get(&url)
-            .header("authorization", auth_header)
-            .header("date", RequestSigner::get_date_header())
+        let response = self.build_signed_request("GET", &url, &path, None, &[])?
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await?;
-            return Err(format!("API error {}: {}", status, error_text).into());
-        }
-
-        let vcns: Vec<Vcn> = response.json().await?;
-        Ok(vcns)
+        Self::handle_response(response).await
     }
 
     /// List subnets in a compartment
@@ -274,23 +232,10 @@ impl ComputeClient {
         let path = format!("/20160918/subnets?compartmentId={}", compartment_id);
         let url = format!("{}{}", self.endpoint(), path);
 
-        let auth_header = self.signer.sign_request("GET", &path, &self.host(), None, &[])?;
-
-        let response = self
-            .http_client
-            .get(&url)
-            .header("authorization", auth_header)
-            .header("date", RequestSigner::get_date_header())
+        let response = self.build_signed_request("GET", &url, &path, None, &[])?
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await?;
-            return Err(format!("API error {}: {}", status, error_text).into());
-        }
-
-        let subnets: Vec<Subnet> = response.json().await?;
-        Ok(subnets)
+        Self::handle_response(response).await
     }
 }

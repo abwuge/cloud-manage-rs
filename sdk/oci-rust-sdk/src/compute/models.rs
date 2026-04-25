@@ -33,13 +33,13 @@ pub struct LaunchInstanceDetails {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "sourceType")]
 pub enum InstanceSourceDetails {
-    #[serde(rename = "image")]
+    #[serde(rename = "image", rename_all = "camelCase")]
     Image {
         image_id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         boot_volume_size_in_gbs: Option<i64>,
     },
-    #[serde(rename = "bootVolume")]
+    #[serde(rename = "bootVolume", rename_all = "camelCase")]
     BootVolume {
         boot_volume_id: String,
     },

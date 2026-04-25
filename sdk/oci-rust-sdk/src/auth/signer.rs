@@ -34,7 +34,7 @@ impl RequestSigner {
         })
     }
 
-    /// Sign an HTTP request and return the Authorization header value
+    /// Sign an HTTP request and return the Authorization header value and additional headers
     pub fn sign_request(
         &self,
         method: &str,
@@ -42,7 +42,7 @@ impl RequestSigner {
         host: &str,
         body: Option<&[u8]>,
         headers: &[(&str, &str)],
-    ) -> Result<String> {
+    ) -> Result<(String, Vec<(String, String)>)> {
         let date = Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
 
         let mut signing_headers = vec![
@@ -59,8 +59,12 @@ impl RequestSigner {
             date
         );
 
+        let mut additional_headers = vec![
+            ("date".to_string(), date.clone()),
+        ];
+
         // Add body-related headers if body exists
-        if let Some(body_bytes) = body {
+        let content_sha256 = if let Some(body_bytes) = body {
             let content_length = body_bytes.len();
             let mut hasher = Sha256::new();
             hasher.update(body_bytes);
@@ -68,6 +72,7 @@ impl RequestSigner {
 
             signing_string.push_str(&format!("\ncontent-length: {}", content_length));
             signing_headers.push("content-length".to_string());
+            additional_headers.push(("content-length".to_string(), content_length.to_string()));
 
             for (key, value) in headers {
                 if key.to_lowercase() == "content-type" {
@@ -79,7 +84,11 @@ impl RequestSigner {
 
             signing_string.push_str(&format!("\nx-content-sha256: {}", content_sha256));
             signing_headers.push("x-content-sha256".to_string());
-        }
+            
+            Some(content_sha256)
+        } else {
+            None
+        };
 
         // Sign using PKCS#1 v1.5 with SHA256
         let signing_key = SigningKey::<Sha256>::new(self.private_key.clone());
@@ -93,11 +102,11 @@ impl RequestSigner {
             signature_b64
         );
 
-        Ok(auth_header)
-    }
+        // Add x-content-sha256 to additional headers if present
+        if let Some(sha256) = content_sha256 {
+            additional_headers.push(("x-content-sha256".to_string(), sha256));
+        }
 
-    /// Get the date header value for the current request
-    pub fn get_date_header() -> String {
-        Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string()
+        Ok((auth_header, additional_headers))
     }
 }

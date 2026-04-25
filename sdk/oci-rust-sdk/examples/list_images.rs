@@ -6,10 +6,10 @@ use std::path::Path;
 
 /// Example: List OCI images in a hierarchical structure
 /// 
-/// This example demonstrates a human-friendly multi-level image listing:
-/// Level 1: OS Category (Windows / Linux / Custom)
-/// Level 2: OS Distribution (Oracle Linux, Ubuntu, CentOS, etc.)
-/// Level 3: Latest versions with ARM/AMD OCIDs
+/// Demonstrates a human-friendly 3-level image listing:
+/// Level 1: OS Distribution (Oracle Linux, Ubuntu, Windows, etc.)
+/// Level 2: Major Version (latest 3 versions)
+/// Level 3: Architecture (ARM/AMD OCIDs for each version)
 /// 
 /// Environment variables:
 /// - OCI_CONFIG_FILE: Path to OCI config file (default: ~/.oci/config)
