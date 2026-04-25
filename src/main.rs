@@ -12,8 +12,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;
 
 const CONFIG_FILE: &str = "./config/config";
-const LEGACY_OCI_CONFIG: &str = "./config/oci_config";
-const LEGACY_INSTANCE_CONFIG: &str = "./config/instance_config.toml";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -67,23 +65,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 }
 
 async fn load_or_create_config() -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
-    if !InstanceConfigFile::exists(CONFIG_FILE) {
-        match InstanceConfigFile::migrate_legacy(
-            CONFIG_FILE,
-            LEGACY_OCI_CONFIG,
-            LEGACY_INSTANCE_CONFIG,
-        ) {
-            Ok(true) => {
-                println!(
-                    "✨ Migrated legacy {} + {} into {}",
-                    LEGACY_INSTANCE_CONFIG, LEGACY_OCI_CONFIG, CONFIG_FILE
-                );
-            }
-            Ok(false) => {}
-            Err(e) => println!("⚠️  Legacy config migration failed: {}", e),
-        }
-    }
-
     if InstanceConfigFile::exists(CONFIG_FILE) {
         println!("📂 Loading config from: {}", CONFIG_FILE);
         match InstanceConfigFile::load_from_file(CONFIG_FILE) {
