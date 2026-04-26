@@ -52,6 +52,14 @@ cargo test
 cargo build --release
 ```
 
+> [!WARNING]
+> Individual commits are **not guaranteed to build in isolation**. Commits
+> are split by responsibility (e.g. SDK changes, main-project changes, and
+> documentation are kept in separate commits) rather than to be
+> bisect-friendly. A refactor that touches both the SDK and its callers
+> may leave the tree temporarily un-buildable between two adjacent commits;
+> the tip of `master` is what is expected to compile.
+
 ## License
 
 MIT
