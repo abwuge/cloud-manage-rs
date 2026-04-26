@@ -64,10 +64,10 @@ pub struct CreateVnicDetails {
     pub private_ip: Option<String>,
     
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub assign_ipv6ip: Option<bool>,
+    pub assign_ipv6_ip: Option<bool>,
     
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ipv6address_ipv6subnet_cidr_pair_details: Option<Vec<Ipv6AddressDetails>>,
+    pub ipv6_address_ipv6_subnet_cidr_pair_details: Option<Vec<Ipv6AddressDetails>>,
 }
 
 /// IPv6 address details
@@ -75,10 +75,10 @@ pub struct CreateVnicDetails {
 #[serde(rename_all = "camelCase")]
 pub struct Ipv6AddressDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ipv6address: Option<String>,
+    pub ipv6_address: Option<String>,
     
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ipv6subnet_cidr: Option<String>,
+    pub ipv6_subnet_cidr: Option<String>,
 }
 
 /// Shape configuration details
