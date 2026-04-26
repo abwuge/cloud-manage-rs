@@ -207,6 +207,11 @@ let launch_details = LaunchInstanceDetails {
         display_name: Some("my-vnic".to_string()),
         hostname_label: None,
         private_ip: None,
+        // IPv6: leave both as None to skip; set assign_ipv6_ip=Some(true) for
+        // auto-assignment from the subnet's IPv6 CIDR; provide pair details only
+        // when you need to pin a specific address or pick a particular IPv6 CIDR.
+        assign_ipv6_ip: None,
+        ipv6_address_ipv6_subnet_cidr_pair_details: None,
     }),
     metadata: None,
     shape_config: None,
@@ -230,6 +235,25 @@ Get details of a specific instance.
 ```rust
 let instance = client.get_instance("ocid1.instance.oc1.phx.aaaaaa...").await?;
 println!("State: {:?}", instance.lifecycle_state);
+```
+
+### `get_image(&self, image_id: &str) -> Result<Image>`
+
+Get details of a specific image by OCID.
+
+**Parameters:**
+- `image_id` - Image OCID
+
+**Returns:** `Result<Image, Box<dyn std::error::Error>>`
+
+**Example:**
+```rust
+let image = client.get_image("ocid1.image.oc1.phx.aaaaaa...").await?;
+println!("Image: {} ({} {})",
+    image.display_name.unwrap_or_default(),
+    image.operating_system.unwrap_or_default(),
+    image.operating_system_version.unwrap_or_default(),
+);
 ```
 
 ### `terminate_instance(&self, instance_id: &str) -> Result<()>`

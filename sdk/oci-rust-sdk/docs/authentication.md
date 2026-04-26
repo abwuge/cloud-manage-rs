@@ -6,13 +6,21 @@ Load OCI configuration from a file.
 
 ### Methods
 
+#### `new() -> Result<Self>`
+
+Load from the default location (`~/.oci/config`) and the `DEFAULT` profile.
+
+#### `from_profile(profile: &str) -> Result<Self>`
+
+Load from the default location (`~/.oci/config`) using a specific profile.
+
 #### `from_file(path: &Path, profile: &str) -> Result<Self>`
 
-Load configuration from specified file and profile.
+Load configuration from a specific file and profile.
 
 **Parameters:**
 - `path` - Path to the OCI config file
-- `profile` - Profile name to use (e.g., "DEFAULT")
+- `profile` - Profile name to use (e.g., `"DEFAULT"`)
 
 **Returns:** `Result<FileConfigProvider, AuthError>`
 
@@ -23,7 +31,7 @@ use std::path::Path;
 
 let config = FileConfigProvider::from_file(
     Path::new("~/.oci/config"),
-    "DEFAULT"
+    "DEFAULT",
 )?;
 ```
 
@@ -49,13 +57,17 @@ Get region identifier.
 
 Get key fingerprint.
 
-#### `private_key(&self) -> Result<RsaPrivateKey>`
+#### `private_key(&self) -> Result<String>`
 
-Get private key for signing requests.
+Get the PEM-encoded private key used to sign requests. The signer (`RequestSigner`) parses this PEM internally; callers do not need to convert it themselves.
+
+#### `passphrase(&self) -> Result<Option<String>>`
+
+Get the passphrase protecting the private key, or `None` if the key is unencrypted. The default trait impl returns `None`; `FileConfigProvider` overrides it to read the optional `passphrase` field from the config file.
 
 #### `key_id(&self) -> Result<String>`
 
-Get full key ID (format: `{tenancy}/{user}/{fingerprint}`).
+Get the full key ID (format: `{tenancy}/{user}/{fingerprint}`). The trait provides a default implementation built from the three accessors above.
 
 ## Configuration File Format
 
