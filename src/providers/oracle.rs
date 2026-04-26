@@ -119,11 +119,16 @@ impl OracleInstanceCreator {
             .filter(|&size| size >= 50);
         
         let ipv6_details = if self.instance_config.network.assign_ipv6 {
-            let ipv6_addr = Ipv6AddressDetails {
-                ipv6address: self.instance_config.network.ipv6_address.clone(),
-                ipv6subnet_cidr: None,
-            };
-            Some(vec![ipv6_addr])
+            self.instance_config
+                .network
+                .ipv6_address
+                .as_ref()
+                .map(|addr| {
+                    vec![Ipv6AddressDetails {
+                        ipv6_address: Some(addr.clone()),
+                        ipv6_subnet_cidr: None,
+                    }]
+                })
         } else {
             None
         };
@@ -145,8 +150,8 @@ impl OracleInstanceCreator {
                 display_name: Some(format!("{}-vnic", config.display_name)),
                 hostname_label: self.instance_config.network.hostname_label.clone(),
                 private_ip: self.instance_config.network.private_ip.clone(),
-                assign_ipv6ip: Some(self.instance_config.network.assign_ipv6),
-                ipv6address_ipv6subnet_cidr_pair_details: ipv6_details,
+                assign_ipv6_ip: Some(self.instance_config.network.assign_ipv6),
+                ipv6_address_ipv6_subnet_cidr_pair_details: ipv6_details,
             }),
             display_name: Some(config.display_name.clone()),
             hostname_label: None,
