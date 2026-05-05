@@ -5,6 +5,7 @@ mod dns;
 mod instance;
 mod providers;
 mod ui;
+mod web;
 
 use clap::Parser;
 use cli::{Cli, Command};
@@ -191,6 +192,10 @@ async fn run_command(cmd: Command) -> AppResult<()> {
             let config = config::load_existing_config()?;
             let new_config = config::reconfigure_quick(&config).await?;
             config::save_config_and_exit(&new_config)?;
+        }
+        Command::Serve { host, port } => {
+            let config = config::load_existing_config()?;
+            web::serve(config, &host, port).await?;
         }
     }
     Ok(())

@@ -94,6 +94,108 @@ fn maybe_save_snipe_config(
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+pub enum SnipeEvent {
+    Started {
+        min_delay: f64,
+        max_delay: f64,
+        max_attempts: u32,
+        bypass: bool,
+    },
+    AttemptStart {
+        attempt: u32,
+    },
+    AttemptError {
+        attempt: u32,
+        message: String,
+        retryable: bool,
+    },
+    Waiting {
+        attempt: u32,
+        delay_secs: f64,
+    },
+    Success {
+        attempt: u32,
+        instance_id: String,
+    },
+    Stopped {
+        reason: String,
+    },
+}
+
+pub async fn snipe_instance_core<F>(
+    config: &InstanceConfigFile,
+    min_delay: f64,
+    max_delay: f64,
+    max_attempts: u32,
+    bypass: bool,
+    mut on_event: F,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    F: FnMut(SnipeEvent),
+{
+    let (min_delay, max_delay) = if min_delay <= max_delay {
+        (min_delay, max_delay)
+    } else {
+        (max_delay, min_delay)
+    };
+
+    on_event(SnipeEvent::Started {
+        min_delay,
+        max_delay,
+        max_attempts,
+        bypass,
+    });
+
+    let creator = OracleInstanceCreator::new(config.clone());
+    let instance_config = build_instance_config(config);
+
+    let mut attempt: u32 = 0;
+    loop {
+        attempt += 1;
+        if max_attempts != 0 && attempt > max_attempts {
+            on_event(SnipeEvent::Stopped {
+                reason: format!("reached max attempts ({})", max_attempts),
+            });
+            return Ok(());
+        }
+
+        on_event(SnipeEvent::AttemptStart { attempt });
+        match creator.create_instance(&instance_config).await {
+            Ok(id) => {
+                on_event(SnipeEvent::Success {
+                    attempt,
+                    instance_id: id,
+                });
+                return Ok(());
+            }
+            Err(e) => {
+                let raw: String = e.to_string();
+                let pretty = humanize_oci_error(&raw);
+                let retryable = bypass || is_retryable_oci_error(&raw);
+                on_event(SnipeEvent::AttemptError {
+                    attempt,
+                    message: pretty.clone(),
+                    retryable,
+                });
+                if !retryable {
+                    on_event(SnipeEvent::Stopped {
+                        reason: format!("aborted on non-retryable error: {}", pretty),
+                    });
+                    return Ok(());
+                }
+            }
+        }
+
+        let delay = random_in_range(min_delay, max_delay);
+        on_event(SnipeEvent::Waiting {
+            attempt,
+            delay_secs: delay,
+        });
+        sleep(Duration::from_secs_f64(delay)).await;
+    }
+}
+
 pub async fn snipe_instance(
     config: &InstanceConfigFile,
     min_delay: f64,
@@ -108,52 +210,43 @@ pub async fn snipe_instance(
     }
     println!("   (Ctrl+C to stop at any time)\n");
 
-    let (min_delay, max_delay) = if min_delay <= max_delay {
-        (min_delay, max_delay)
-    } else {
-        (max_delay, min_delay)
-    };
-
-    let creator = OracleInstanceCreator::new(config.clone());
-    let instance_config = build_instance_config(config);
-
-    let mut attempt: u32 = 0;
-    let outcome = loop {
-        attempt += 1;
-        if max_attempts != 0 && attempt > max_attempts {
-            break Err(format!("reached max attempts ({})", max_attempts));
-        }
-
-        println!("\n[#{}] launching...", attempt);
-        match creator.create_instance(&instance_config).await {
-            Ok(id) => break Ok(id),
-            Err(e) => {
-                let raw: String = e.to_string();
-                let pretty = humanize_oci_error(&raw);
-                if bypass || is_retryable_oci_error(&raw) {
-                    println!("   ✖ {}", pretty);
+    snipe_instance_core(
+        config,
+        min_delay,
+        max_delay,
+        max_attempts,
+        bypass,
+        |event| match event {
+            SnipeEvent::Started { .. } => {}
+            SnipeEvent::AttemptStart { attempt } => {
+                println!("\n[#{}] launching...", attempt);
+            }
+            SnipeEvent::AttemptError {
+                message, retryable, ..
+            } => {
+                if retryable {
+                    println!("   ✖ {}", message);
                 } else {
-                    println!("   ✖ {} (non-retryable)", pretty);
-                    break Err(format!("aborted on non-retryable error: {}", pretty));
+                    println!("   ✖ {} (non-retryable)", message);
                 }
             }
-        }
-
-        let delay = random_in_range(min_delay, max_delay);
-        println!("   ⏳ retrying in {:.1}s...", delay);
-        sleep(Duration::from_secs_f64(delay)).await;
-    };
-
-    match outcome {
-        Ok(instance_id) => {
-            println!("\n✅ Snipe successful on attempt #{}!", attempt);
-            println!("📌 Instance ID: {}", instance_id);
-            println!("\nTip: Use OCI Console to view instance details and IP address");
-        }
-        Err(reason) => {
-            println!("\n⏹️  Stopped: {}", reason);
-        }
-    }
+            SnipeEvent::Waiting { delay_secs, .. } => {
+                println!("   ⏳ retrying in {:.1}s...", delay_secs);
+            }
+            SnipeEvent::Success {
+                attempt,
+                instance_id,
+            } => {
+                println!("\n✅ Snipe successful on attempt #{}!", attempt);
+                println!("📌 Instance ID: {}", instance_id);
+                println!("\nTip: Use OCI Console to view instance details and IP address");
+            }
+            SnipeEvent::Stopped { reason } => {
+                println!("\n⏹️  Stopped: {}", reason);
+            }
+        },
+    )
+    .await?;
 
     if pause_at_end {
         println!("\nPress Enter to continue...");
