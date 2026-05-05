@@ -24,7 +24,7 @@ impl AlwaysFreeInstanceType {
             Self::ArmFlex { .. } => "VM.Standard.A1.Flex",
         }
     }
-    
+
     pub fn validate(&self) -> Result<(), String> {
         match self {
             Self::AmdMicro => Ok(()),
@@ -67,7 +67,7 @@ impl InstanceConfig {
             tags: None,
         }
     }
-    
+
     pub fn arm_flex(display_name: impl Into<String>, ocpus: u8, memory_gb: u8) -> Self {
         Self {
             instance_type: AlwaysFreeInstanceType::ArmFlex { ocpus, memory_gb },
@@ -77,19 +77,20 @@ impl InstanceConfig {
             tags: None,
         }
     }
-    
+
     pub fn with_public_ip(mut self, assign: bool) -> Self {
         self.assign_public_ip = assign;
         self
     }
-    
+
     pub fn with_boot_volume_size(mut self, size_gb: i64) -> Self {
         self.boot_volume_size_gb = Some(size_gb);
         self
     }
-    
+
     pub fn with_tag(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.tags.get_or_insert_with(HashMap::new)
+        self.tags
+            .get_or_insert_with(HashMap::new)
             .insert(key.into(), value.into());
         self
     }
@@ -115,9 +116,8 @@ impl OracleInstanceCreator {
         config.instance_type.validate()?;
         let client = self.make_client()?;
 
-        let boot_volume_size = config.boot_volume_size_gb
-            .filter(|&size| size >= 50);
-        
+        let boot_volume_size = config.boot_volume_size_gb.filter(|&size| size >= 50);
+
         let ipv6_details = if self.instance_config.network.assign_ipv6 {
             self.instance_config
                 .network
@@ -132,15 +132,19 @@ impl OracleInstanceCreator {
         } else {
             None
         };
-        
+
         let launch_details = LaunchInstanceDetails {
             availability_domain: self.instance_config.oracle.availability_domain.clone(),
             compartment_id: self.instance_config.oracle.compartment_id.clone(),
             shape: config.instance_type.shape().to_string(),
             source_details: InstanceSourceDetails::Image {
                 image_id: match config.instance_type {
-                    AlwaysFreeInstanceType::AmdMicro => self.instance_config.oracle.image_id_amd.clone(),
-                    AlwaysFreeInstanceType::ArmFlex { .. } => self.instance_config.oracle.image_id_arm.clone(),
+                    AlwaysFreeInstanceType::AmdMicro => {
+                        self.instance_config.oracle.image_id_amd.clone()
+                    }
+                    AlwaysFreeInstanceType::ArmFlex { .. } => {
+                        self.instance_config.oracle.image_id_arm.clone()
+                    }
                 },
                 boot_volume_size_in_gbs: boot_volume_size,
             },
@@ -157,7 +161,10 @@ impl OracleInstanceCreator {
             hostname_label: None,
             metadata: {
                 let mut metadata = HashMap::new();
-                metadata.insert("ssh_authorized_keys".to_string(), self.instance_config.oracle.ssh_public_key.clone());
+                metadata.insert(
+                    "ssh_authorized_keys".to_string(),
+                    self.instance_config.oracle.ssh_public_key.clone(),
+                );
                 Some(metadata)
             },
             shape_config: match config.instance_type {
@@ -171,12 +178,12 @@ impl OracleInstanceCreator {
             },
             freeform_tags: config.tags.clone(),
         };
-        
+
         let instance = client.launch_instance(&launch_details).await?;
-        
+
         Ok(instance.id)
     }
-    
+
     pub async fn wait_for_running(
         &self,
         instance_id: &str,
@@ -186,14 +193,14 @@ impl OracleInstanceCreator {
 
         let start = Instant::now();
         let max_duration = Duration::from_secs(max_wait_seconds);
-        
+
         loop {
             if start.elapsed() > max_duration {
                 return Err("Instance start timeout".into());
             }
-            
+
             let instance = client.get_instance(instance_id).await?;
-            
+
             match instance.lifecycle_state {
                 LifecycleState::Running => return Ok(()),
                 LifecycleState::Terminated | LifecycleState::Terminating => {
@@ -203,14 +210,15 @@ impl OracleInstanceCreator {
             }
         }
     }
-    
+
     pub async fn create_and_wait(
         &self,
         config: &InstanceConfig,
         max_wait_seconds: u64,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let instance_id = self.create_instance(config).await?;
-        self.wait_for_running(&instance_id, max_wait_seconds).await?;
+        self.wait_for_running(&instance_id, max_wait_seconds)
+            .await?;
         Ok(instance_id)
     }
 }
@@ -218,27 +226,69 @@ impl OracleInstanceCreator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_instance_type_validation() {
         assert!(AlwaysFreeInstanceType::AmdMicro.validate().is_ok());
-        
-        assert!(AlwaysFreeInstanceType::ArmFlex { ocpus: 1, memory_gb: 6 }.validate().is_ok());
-        assert!(AlwaysFreeInstanceType::ArmFlex { ocpus: 2, memory_gb: 12 }.validate().is_ok());
-        assert!(AlwaysFreeInstanceType::ArmFlex { ocpus: 4, memory_gb: 24 }.validate().is_ok());
-        
-        assert!(AlwaysFreeInstanceType::ArmFlex { ocpus: 0, memory_gb: 6 }.validate().is_err());
-        assert!(AlwaysFreeInstanceType::ArmFlex { ocpus: 5, memory_gb: 30 }.validate().is_err());
-        assert!(AlwaysFreeInstanceType::ArmFlex { ocpus: 2, memory_gb: 10 }.validate().is_err());
+
+        assert!(
+            AlwaysFreeInstanceType::ArmFlex {
+                ocpus: 1,
+                memory_gb: 6
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            AlwaysFreeInstanceType::ArmFlex {
+                ocpus: 2,
+                memory_gb: 12
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            AlwaysFreeInstanceType::ArmFlex {
+                ocpus: 4,
+                memory_gb: 24
+            }
+            .validate()
+            .is_ok()
+        );
+
+        assert!(
+            AlwaysFreeInstanceType::ArmFlex {
+                ocpus: 0,
+                memory_gb: 6
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            AlwaysFreeInstanceType::ArmFlex {
+                ocpus: 5,
+                memory_gb: 30
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            AlwaysFreeInstanceType::ArmFlex {
+                ocpus: 2,
+                memory_gb: 10
+            }
+            .validate()
+            .is_err()
+        );
     }
-    
+
     #[test]
     fn test_instance_config_builder() {
         let config = InstanceConfig::amd_micro("test-instance")
             .with_public_ip(false)
             .with_boot_volume_size(50)
             .with_tag("env", "test");
-        
+
         assert_eq!(config.display_name, "test-instance");
         assert!(!config.assign_public_ip);
         assert_eq!(config.boot_volume_size_gb, Some(50));

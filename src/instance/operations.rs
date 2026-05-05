@@ -1,14 +1,19 @@
 use crate::config::config::InstanceConfigFile;
-use crate::ui::ghost_input::ghost_input;
 use crate::providers::oracle::OracleInstanceCreator;
+use crate::ui::ghost_input::ghost_input;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use crate::common::utils::{build_instance_config, format_secs, humanize_oci_error, is_retryable_oci_error, parse_positive_f64, random_in_range};
+use crate::common::utils::{
+    build_instance_config, format_secs, humanize_oci_error, is_retryable_oci_error,
+    parse_positive_f64, random_in_range,
+};
 
 const CONFIG_FILE: &str = "./config/config";
 
-pub async fn create_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn create_instance(
+    config: &InstanceConfigFile,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("\n🚀 Creating instance...\n");
 
     let instance_config = build_instance_config(config);
@@ -28,7 +33,9 @@ pub async fn create_instance(config: &InstanceConfigFile) -> Result<(), Box<dyn 
     Ok(())
 }
 
-pub async fn snipe_instance_interactive(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn snipe_instance_interactive(
+    config: &InstanceConfigFile,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let snipe = &config.snipe;
     let min_delay = parse_positive_f64(
         &ghost_input(
@@ -153,7 +160,9 @@ pub async fn snipe_instance(
     Ok(())
 }
 
-pub async fn handle_create_command(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn handle_create_command(
+    config: &InstanceConfigFile,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let instance_config = build_instance_config(config);
     let creator = OracleInstanceCreator::new(config.clone());
     match creator.create_and_wait(&instance_config, 300).await {

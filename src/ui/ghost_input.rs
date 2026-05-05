@@ -1,14 +1,10 @@
-use console::{measure_text_width, style, Key, Term};
+use console::{Key, Term, measure_text_width, style};
 
 /// Fish-shell-style prompt: a fixed `prefix` plus a `default_suffix` rendered
 /// as ghost text. Chars left of the cursor are bright, chars right are dim.
 /// Typing overwrites in place; arrows / Home / End / Backspace / Del all work.
 /// Enter accepts the whole buffer (so an untouched default is accepted too).
-pub fn ghost_input(
-    label: &str,
-    prefix: &str,
-    default_suffix: &str,
-) -> std::io::Result<String> {
+pub fn ghost_input(label: &str, prefix: &str, default_suffix: &str) -> std::io::Result<String> {
     let term = Term::stdout();
     let mut chars: Vec<char> = default_suffix.chars().collect();
     let mut cursor: usize = 0;
@@ -62,7 +58,11 @@ pub fn ghost_input(
                 let abs = header_w + cursor;
                 let new_abs = abs.saturating_sub(w);
                 // Clamp at header boundary so the cursor never enters the prompt.
-                cursor = if new_abs >= header_w { new_abs - header_w } else { 0 };
+                cursor = if new_abs >= header_w {
+                    new_abs - header_w
+                } else {
+                    0
+                };
             }
             Key::ArrowDown => {
                 let w = term_w();
@@ -159,8 +159,16 @@ fn render(
     // Layout math assumes 1-column-per-char (true for ASCII-only inputs here).
     let total_w = header_w + chars.len();
     let cursor_abs_w = header_w + cursor;
-    let total_lines = if total_w == 0 { 1 } else { (total_w + term_w - 1) / term_w };
-    let after_row = if total_w == 0 { 0 } else { (total_w - 1) / term_w };
+    let total_lines = if total_w == 0 {
+        1
+    } else {
+        (total_w + term_w - 1) / term_w
+    };
+    let after_row = if total_w == 0 {
+        0
+    } else {
+        (total_w - 1) / term_w
+    };
     let target_row = cursor_abs_w / term_w;
     let target_col = cursor_abs_w % term_w;
 

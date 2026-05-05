@@ -16,7 +16,11 @@ pub fn build_instance_config(config: &InstanceConfigFile) -> InstanceConfig {
 }
 
 pub fn parse_positive_f64(s: &str, fallback: f64) -> f64 {
-    s.trim().parse::<f64>().ok().filter(|v| *v >= 0.0).unwrap_or(fallback)
+    s.trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|v| *v >= 0.0)
+        .unwrap_or(fallback)
 }
 
 pub fn humanize_oci_error(msg: &str) -> String {
