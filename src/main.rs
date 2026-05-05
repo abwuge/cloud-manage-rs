@@ -9,9 +9,13 @@ mod ui;
 use clap::Parser;
 use cli::{Cli, Command};
 use config::InstanceConfigFile;
+use providers::oracle::PublicIpv4Target;
+use tokio::task::JoinHandle;
+
+type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn main() -> AppResult<()> {
     let cli = Cli::parse();
 
     if let Some(cmd) = cli.command {
@@ -21,14 +25,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     run_interactive_mode().await
 }
 
-async fn run_interactive_mode() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn run_interactive_mode() -> AppResult<()> {
     ui::print_banner();
     let mut config = config::load_or_create_config().await?;
+    let mut oci_state = OciState::Loading(spawn_oci_status_load(config.clone()));
 
     loop {
         let selection = ui::show_main_menu()?;
 
-        if handle_main_menu_selection(selection, &mut config).await? {
+        if handle_main_menu_selection(selection, &mut config, &mut oci_state).await? {
             break;
         }
     }
@@ -39,10 +44,11 @@ async fn run_interactive_mode() -> Result<(), Box<dyn std::error::Error + Send +
 async fn handle_main_menu_selection(
     selection: usize,
     config: &mut InstanceConfigFile,
-) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    oci_state: &mut OciState,
+) -> AppResult<bool> {
     match selection {
         0 => {
-            handle_oci_menu(config).await?;
+            handle_oci_menu(config, oci_state).await?;
             Ok(false)
         }
         1 => {
@@ -59,7 +65,11 @@ async fn handle_main_menu_selection(
 
 async fn handle_oci_menu(
     config: &mut InstanceConfigFile,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    oci_state: &mut OciState,
+) -> AppResult<()> {
+    let public_ipv4_targets = oci_state.targets_mut().await?;
+    instance::show_public_ipv4_status(public_ipv4_targets);
+
     loop {
         let selection = ui::show_oci_menu()?;
         match selection {
@@ -68,25 +78,30 @@ async fn handle_oci_menu(
                 ui::pause_for_user()?;
             }
             1 => {
-                instance::snipe_instance_interactive(config).await?;
+                instance::refresh_public_ipv4_from_targets(config, public_ipv4_targets, false)
+                    .await?;
+                ui::pause_for_user()?;
             }
             2 => {
+                instance::snipe_instance_interactive(config).await?;
+            }
+            3 => {
                 let new_config = config::reconfigure_quick(&config).await?;
                 config::save_config_and_exit(&new_config)?;
                 *config = new_config;
                 break;
             }
-            3 => {
+            4 => {
                 let new_config = config::reconfigure_full().await?;
                 config::save_config_and_exit(&new_config)?;
                 *config = new_config;
                 break;
             }
-            4 => {
+            5 => {
                 config::display_oracle_config(config)?;
                 ui::pause_for_user()?;
             }
-            5 => break,
+            6 => break,
             _ => unreachable!(),
         }
     }
@@ -94,9 +109,7 @@ async fn handle_oci_menu(
     Ok(())
 }
 
-async fn handle_cloudflare_menu(
-    config: &mut InstanceConfigFile,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn handle_cloudflare_menu(config: &mut InstanceConfigFile) -> AppResult<()> {
     loop {
         let selection = ui::show_cloudflare_menu()?;
         match selection {
@@ -130,7 +143,7 @@ async fn handle_cloudflare_menu(
     Ok(())
 }
 
-async fn run_command(cmd: Command) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn run_command(cmd: Command) -> AppResult<()> {
     match cmd {
         Command::ShowConfig => {
             let config = config::load_existing_config()?;
@@ -139,6 +152,14 @@ async fn run_command(cmd: Command) -> Result<(), Box<dyn std::error::Error + Sen
         Command::Create => {
             let config = config::load_existing_config()?;
             instance::handle_create_command(&config).await?;
+        }
+        Command::RefreshIp { instance_id } => {
+            let config = config::load_existing_config()?;
+            if let Some(instance_id) = instance_id {
+                instance::refresh_public_ipv4(&config, &instance_id, true).await?;
+            } else {
+                instance::refresh_public_ipv4_auto(&config).await?;
+            }
         }
         Command::Dns { command } => {
             let config = config::load_existing_config()?;
@@ -173,4 +194,32 @@ async fn run_command(cmd: Command) -> Result<(), Box<dyn std::error::Error + Sen
         }
     }
     Ok(())
+}
+
+enum OciState {
+    Loading(JoinHandle<AppResult<Vec<PublicIpv4Target>>>),
+    Ready(Vec<PublicIpv4Target>),
+}
+
+impl OciState {
+    async fn targets_mut(&mut self) -> AppResult<&mut Vec<PublicIpv4Target>> {
+        if matches!(self, Self::Loading(_)) {
+            let Self::Loading(handle) = std::mem::replace(self, Self::Ready(Vec::new())) else {
+                unreachable!();
+            };
+            let targets = handle.await??;
+            *self = Self::Ready(targets);
+        }
+
+        match self {
+            Self::Ready(targets) => Ok(targets),
+            Self::Loading(_) => unreachable!(),
+        }
+    }
+}
+
+fn spawn_oci_status_load(
+    config: InstanceConfigFile,
+) -> JoinHandle<AppResult<Vec<PublicIpv4Target>>> {
+    tokio::spawn(async move { instance::load_public_ipv4_targets(&config).await })
 }

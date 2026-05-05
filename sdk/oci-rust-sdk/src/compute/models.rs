@@ -101,7 +101,8 @@ pub struct Instance {
     pub availability_domain: String,
     pub lifecycle_state: LifecycleState,
     pub shape: String,
-    pub region: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
     
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
@@ -186,4 +187,89 @@ pub struct Subnet {
     pub ipv6_cidr_block: Option<String>,
     pub lifecycle_state: String,
     pub availability_domain: Option<String>,
+}
+
+/// VNIC attachment
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VnicAttachment {
+    pub id: String,
+    pub compartment_id: String,
+    pub instance_id: String,
+    pub lifecycle_state: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vnic_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nic_index: Option<i32>,
+}
+
+/// VNIC information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Vnic {
+    pub id: String,
+    pub compartment_id: String,
+    pub lifecycle_state: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub private_ip: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub public_ip: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_primary: Option<bool>,
+}
+
+/// Private IP information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateIp {
+    pub id: String,
+    pub compartment_id: String,
+    pub ip_address: String,
+    pub vnic_id: String,
+    pub is_primary: bool,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+}
+
+/// Public IP information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublicIp {
+    pub id: String,
+    pub compartment_id: String,
+    pub ip_address: String,
+    pub lifecycle_state: String,
+    pub lifetime: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub private_ip_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+}
+
+/// Public IP creation details
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatePublicIpDetails {
+    pub compartment_id: String,
+    pub lifetime: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub private_ip_id: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 }

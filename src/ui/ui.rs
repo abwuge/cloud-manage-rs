@@ -4,6 +4,7 @@ pub const MAIN_MENU_OPTIONS: &[&str] = &["Oracle Cloud", "Cloudflare", "Exit"];
 
 pub const OCI_MENU_OPTIONS: &[&str] = &[
     "Create Instance",
+    "Refresh Public IPv4",
     "Snipe Instance (retry until success)",
     "Quick Config (Instance Only)",
     "Configure Oracle Cloud",

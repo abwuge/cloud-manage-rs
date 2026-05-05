@@ -1,4 +1,7 @@
-use super::models::{AvailabilityDomain, Image, Instance, LaunchInstanceDetails, Shape, Subnet, Vcn};
+use super::models::{
+    AvailabilityDomain, CreatePublicIpDetails, Image, Instance, LaunchInstanceDetails, PrivateIp,
+    PublicIp, Shape, Subnet, Vcn, Vnic, VnicAttachment,
+};
 use crate::auth::{ConfigurationProvider, RequestSigner};
 use reqwest::Client;
 
@@ -64,6 +67,7 @@ impl ComputeClient {
             "GET" => self.http_client.get(url),
             "POST" => self.http_client.post(url),
             "DELETE" => self.http_client.delete(url),
+            "PUT" => self.http_client.put(url),
             _ => return Err(format!("Unsupported HTTP method: {}", method).into()),
         };
         
@@ -173,6 +177,24 @@ impl ComputeClient {
         Self::handle_response(response).await
     }
 
+    /// List instances in a compartment
+    pub async fn list_instances(
+        &self,
+        compartment_id: &str,
+    ) -> Result<Vec<Instance>, Box<dyn std::error::Error + Send + Sync>> {
+        let path = format!(
+            "/20160918/instances?compartmentId={}",
+            urlencoding::encode(compartment_id)
+        );
+        let url = format!("{}{}", self.endpoint(), path);
+
+        let response = self.build_signed_request("GET", &url, &path, None, &[])?
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
     /// List images in a compartment
     pub async fn list_images(
         &self,
@@ -248,6 +270,131 @@ impl ComputeClient {
         let url = format!("{}{}", self.endpoint(), path);
 
         let response = self.build_signed_request("GET", &url, &path, None, &[])?
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    /// List VNIC attachments for an instance
+    pub async fn list_vnic_attachments(
+        &self,
+        compartment_id: &str,
+        instance_id: &str,
+    ) -> Result<Vec<VnicAttachment>, Box<dyn std::error::Error + Send + Sync>> {
+        let path = format!(
+            "/20160918/vnicAttachments?compartmentId={}&instanceId={}",
+            urlencoding::encode(compartment_id),
+            urlencoding::encode(instance_id)
+        );
+        let url = format!("{}{}", self.endpoint(), path);
+
+        let response = self.build_signed_request("GET", &url, &path, None, &[])?
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    /// Get VNIC details
+    pub async fn get_vnic(
+        &self,
+        vnic_id: &str,
+    ) -> Result<Vnic, Box<dyn std::error::Error + Send + Sync>> {
+        let path = format!("/20160918/vnics/{}", vnic_id);
+        let url = format!("{}{}", self.endpoint(), path);
+
+        let response = self.build_signed_request("GET", &url, &path, None, &[])?
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    /// List private IPs on a VNIC
+    pub async fn list_private_ips(
+        &self,
+        vnic_id: &str,
+    ) -> Result<Vec<PrivateIp>, Box<dyn std::error::Error + Send + Sync>> {
+        let path = format!(
+            "/20160918/privateIps?vnicId={}",
+            urlencoding::encode(vnic_id)
+        );
+        let url = format!("{}{}", self.endpoint(), path);
+
+        let response = self.build_signed_request("GET", &url, &path, None, &[])?
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    /// Get public IP by IPv4 address
+    pub async fn get_public_ip_by_ip_address(
+        &self,
+        ip_address: &str,
+    ) -> Result<PublicIp, Box<dyn std::error::Error + Send + Sync>> {
+        let path = "/20160918/publicIps/actions/getByIpAddress";
+        let url = format!("{}{}", self.endpoint(), path);
+        let body = serde_json::json!({ "ipAddress": ip_address });
+        let body = serde_json::to_vec(&body)?;
+
+        let response = self
+            .build_signed_request(
+                "POST",
+                &url,
+                path,
+                Some(&body),
+                &[("content-type", "application/json")],
+            )?
+            .header("content-type", "application/json")
+            .body(body)
+            .send()
+            .await?;
+
+        Self::handle_response(response).await
+    }
+
+    /// Delete a public IP
+    pub async fn delete_public_ip(
+        &self,
+        public_ip_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let path = format!("/20160918/publicIps/{}", public_ip_id);
+        let url = format!("{}{}", self.endpoint(), path);
+
+        let response = self.build_signed_request("DELETE", &url, &path, None, &[])?
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await?;
+            return Err(format!("API error {}: {}", status, error_text).into());
+        }
+
+        Ok(())
+    }
+
+    /// Create a public IP
+    pub async fn create_public_ip(
+        &self,
+        details: &CreatePublicIpDetails,
+    ) -> Result<PublicIp, Box<dyn std::error::Error + Send + Sync>> {
+        let path = "/20160918/publicIps";
+        let url = format!("{}{}", self.endpoint(), path);
+        let body = serde_json::to_vec(details)?;
+
+        let response = self
+            .build_signed_request(
+                "POST",
+                &url,
+                path,
+                Some(&body),
+                &[("content-type", "application/json")],
+            )?
+            .header("content-type", "application/json")
+            .body(body)
             .send()
             .await?;
 

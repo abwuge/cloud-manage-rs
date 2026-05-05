@@ -34,12 +34,24 @@ file is created automatically on first run — see
 | Resource | Action |
 | --- | --- |
 | Compute instance | Create, wait until `RUNNING` |
+| Public IPv4 | Refresh ephemeral address on an existing instance |
 | Image | List by distribution + major version |
 | Subnet | List + select |
 | Availability Domain | List + select |
 
 The wizard fetches lists via the bundled
 [OCI Rust SDK](../../sdk/oci-rust-sdk).
+
+`cloud-manage refresh-ip` lists active instances in the configured compartment
+with their current public IPv4 addresses, so you can pick one. It refreshes the
+selected instance's primary VNIC public IPv4 by deleting the current ephemeral
+public IP, then creating a new ephemeral public IP on the same private IPv4. For
+scripts, an instance OCID can still be passed as an optional argument.
+
+Implementation note: the current public IPv4 is read directly from the VNIC's
+`publicIp` field. To delete the ephemeral public IP, resolve its OCID with OCI's
+`POST /20160918/publicIps/actions/getByIpAddress` action. Do not use
+`publicIps?privateIpId=...` for this flow.
 
 ## Always Free Targets
 

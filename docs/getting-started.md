@@ -83,6 +83,8 @@ wizard automatically.
 cloud-manage --help                    # list commands
 cloud-manage show-config               # print the active configuration
 cloud-manage create                    # launch one instance
+cloud-manage refresh-ip                # choose an instance and refresh public IPv4
+cloud-manage refresh-ip ocid1.instance.oc1..xxx  # optional: script with an OCID
 cloud-manage snipe                     # retry until success (uses [snipe] from config)
 cloud-manage snipe --min-delay 3 --max-delay 10 --max-attempts 100
 cloud-manage snipe --min-delay 3 --save  # also persist the override into config

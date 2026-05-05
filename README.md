@@ -37,6 +37,7 @@ Infrastructure.
 cargo run                              # interactive menu (runs wizard if needed)
 cargo run -- show-config               # non-interactive: print current config
 cargo run -- create                    # non-interactive: launch one instance
+cargo run -- refresh-ip                # choose an instance, then refresh public IPv4
 cargo run -- snipe --min-delay 3 --max-delay 10
 cargo run -- dns list                  # list Cloudflare DNS records
 cargo run -- dns upsert --type A --name app.example.com --content 203.0.113.10

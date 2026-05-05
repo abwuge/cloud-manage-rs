@@ -1,6 +1,8 @@
 use crate::config::config::InstanceConfigFile;
-use crate::providers::oracle::OracleInstanceCreator;
+use crate::providers::oracle::{OracleInstanceCreator, PublicIpv4Target};
 use crate::ui::ghost_input::ghost_input;
+use dialoguer::{Select, theme::ColorfulTheme};
+use oci_rust_sdk::compute::models::LifecycleState;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -176,6 +178,178 @@ pub async fn handle_create_command(
         }
     }
     Ok(())
+}
+
+pub async fn refresh_public_ipv4_from_targets(
+    config: &InstanceConfigFile,
+    targets: &mut Vec<PublicIpv4Target>,
+    exit_on_error: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let Some(selection) = pick_instance_for_refresh(targets)? else {
+        return Ok(());
+    };
+    let result = refresh_public_ipv4_target(config, &targets[selection], exit_on_error).await?;
+    if let Some(result) = result {
+        targets[selection].public_ip = Some(result.new_public_ip.clone());
+        targets[selection].public_ip_error = None;
+    }
+    Ok(())
+}
+
+pub async fn refresh_public_ipv4(
+    config: &InstanceConfigFile,
+    instance_id: &str,
+    exit_on_error: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if instance_id.is_empty() {
+        println!("\n❌ Instance OCID is required");
+        return Ok(());
+    }
+
+    println!("\n🔄 Refreshing public IPv4...");
+    println!("📌 Instance ID: {}", instance_id);
+
+    let creator = OracleInstanceCreator::new(config.clone());
+    let result = match creator
+        .public_ipv4_target_for_instance_id(instance_id)
+        .await
+    {
+        Ok(target) => creator.refresh_public_ipv4_target(&target).await,
+        Err(error) => Err(error),
+    };
+
+    match result {
+        Ok(result) => {
+            println!("\n✅ Public IPv4 refreshed successfully!");
+            match &result.old_public_ip {
+                Some(ip) => println!("Old public IPv4: {}", ip),
+                None => println!("Old public IPv4: none"),
+            }
+            println!("New public IPv4: {}", result.new_public_ip);
+        }
+        Err(e) => {
+            println!("\n❌ Public IPv4 refresh failed: {}", e);
+            if exit_on_error {
+                std::process::exit(1);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn refresh_public_ipv4_auto(
+    config: &InstanceConfigFile,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut targets = load_public_ipv4_targets(config).await?;
+    show_public_ipv4_status(&targets);
+    refresh_public_ipv4_from_targets(config, &mut targets, true).await
+}
+
+async fn refresh_public_ipv4_target(
+    config: &InstanceConfigFile,
+    target: &PublicIpv4Target,
+    exit_on_error: bool,
+) -> Result<
+    Option<crate::providers::oracle::PublicIpRefreshResult>,
+    Box<dyn std::error::Error + Send + Sync>,
+> {
+    println!("\n🔄 Refreshing public IPv4...");
+    println!("Instance: {}", target_name(target));
+    println!(
+        "Current public IPv4: {}",
+        target.public_ip.as_deref().unwrap_or("none")
+    );
+
+    let creator = OracleInstanceCreator::new(config.clone());
+    match creator.refresh_public_ipv4_target(target).await {
+        Ok(result) => {
+            println!("\n✅ Public IPv4 refreshed successfully!");
+            match &result.old_public_ip {
+                Some(ip) => println!("Old public IPv4: {}", ip),
+                None => println!("Old public IPv4: none"),
+            }
+            println!("New public IPv4: {}", result.new_public_ip);
+            Ok(Some(result))
+        }
+        Err(e) => {
+            println!("\n❌ Public IPv4 refresh failed: {}", e);
+            if exit_on_error {
+                std::process::exit(1);
+            }
+            Ok(None)
+        }
+    }
+}
+
+pub async fn load_public_ipv4_targets(
+    config: &InstanceConfigFile,
+) -> Result<Vec<PublicIpv4Target>, Box<dyn std::error::Error + Send + Sync>> {
+    let creator = OracleInstanceCreator::new(config.clone());
+    let mut targets = creator.list_public_ipv4_targets().await?;
+    targets.sort_by(|a, b| {
+        target_sort_key(a)
+            .cmp(&target_sort_key(b))
+            .then_with(|| a.instance_id.cmp(&b.instance_id))
+    });
+
+    Ok(targets)
+}
+
+pub fn show_public_ipv4_status(targets: &[PublicIpv4Target]) {
+    println!("\nOracle Cloud instances:");
+    if targets.is_empty() {
+        println!("No active instances found in configured compartment.");
+        return;
+    }
+    for target in targets {
+        println!("  {}", format_target_option(target));
+    }
+}
+
+fn pick_instance_for_refresh(
+    targets: &[PublicIpv4Target],
+) -> Result<Option<usize>, Box<dyn std::error::Error + Send + Sync>> {
+    if targets.is_empty() {
+        println!("No active instances found in configured compartment.");
+        return Ok(None);
+    }
+    let items: Vec<String> = targets.iter().map(format_target_option).collect();
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select instance to refresh public IPv4")
+        .items(&items)
+        .default(0)
+        .interact()?;
+
+    Ok(Some(selection))
+}
+
+fn target_sort_key(target: &PublicIpv4Target) -> (u8, String) {
+    let state_rank = if target.lifecycle_state == LifecycleState::Running {
+        0
+    } else {
+        1
+    };
+    let name = target.display_name.clone().unwrap_or_default();
+    (state_rank, name)
+}
+
+fn format_target_option(target: &PublicIpv4Target) -> String {
+    let public_ip = match (&target.public_ip, &target.public_ip_error) {
+        (Some(ip), _) => ip.as_str(),
+        (None, Some(_)) => "unavailable",
+        (None, None) => "none",
+    };
+    format!(
+        "{:<12} {:<28} {}",
+        format!("{:?}", target.lifecycle_state),
+        target_name(target),
+        public_ip
+    )
+}
+
+fn target_name(target: &PublicIpv4Target) -> &str {
+    target.display_name.as_deref().unwrap_or("(unnamed)")
 }
 
 pub async fn handle_snipe_command(

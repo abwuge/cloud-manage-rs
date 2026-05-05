@@ -5,8 +5,8 @@ use tokio::time::sleep;
 
 use oci_rust_sdk::compute::ComputeClient;
 use oci_rust_sdk::compute::models::{
-    CreateVnicDetails, InstanceSourceDetails, Ipv6AddressDetails, LaunchInstanceDetails,
-    LaunchInstanceShapeConfigDetails, LifecycleState,
+    CreatePublicIpDetails, CreateVnicDetails, Instance, InstanceSourceDetails, Ipv6AddressDetails,
+    LaunchInstanceDetails, LaunchInstanceShapeConfigDetails, LifecycleState,
 };
 
 use crate::config::InstanceConfigFile;
@@ -98,6 +98,25 @@ impl InstanceConfig {
 
 pub struct OracleInstanceCreator {
     instance_config: InstanceConfigFile,
+}
+
+#[derive(Debug, Clone)]
+pub struct PublicIpRefreshResult {
+    pub old_public_ip: Option<String>,
+    pub new_public_ip: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PublicIpv4Target {
+    pub instance_id: String,
+    pub display_name: Option<String>,
+    pub lifecycle_state: LifecycleState,
+    pub private_ip_id: String,
+    pub public_ip_id: Option<String>,
+    pub public_ip: Option<String>,
+    pub public_ip_error: Option<String>,
+    pub vnic_display_name: Option<String>,
+    pub compartment_id: String,
 }
 
 impl OracleInstanceCreator {
@@ -220,6 +239,137 @@ impl OracleInstanceCreator {
         self.wait_for_running(&instance_id, max_wait_seconds)
             .await?;
         Ok(instance_id)
+    }
+
+    pub async fn list_public_ipv4_targets(
+        &self,
+    ) -> Result<Vec<PublicIpv4Target>, Box<dyn std::error::Error + Send + Sync>> {
+        let client = self.make_client()?;
+        let mut instances = client
+            .list_instances(&self.instance_config.oracle.compartment_id)
+            .await?;
+        instances.retain(|instance| instance.lifecycle_state != LifecycleState::Terminated);
+
+        let mut targets = Vec::new();
+        for instance in instances {
+            match self
+                .public_ipv4_target_for_instance(&client, instance)
+                .await
+            {
+                Ok(target) => targets.push(target),
+                Err(error) => {
+                    eprintln!(
+                        "⚠️  Skipping instance with incomplete network info: {}",
+                        error
+                    );
+                }
+            }
+        }
+
+        Ok(targets)
+    }
+
+    pub async fn public_ipv4_target_for_instance_id(
+        &self,
+        instance_id: &str,
+    ) -> Result<PublicIpv4Target, Box<dyn std::error::Error + Send + Sync>> {
+        let client = self.make_client()?;
+        let instance = client.get_instance(instance_id).await?;
+        self.public_ipv4_target_for_instance(&client, instance)
+            .await
+    }
+
+    pub async fn refresh_public_ipv4_target(
+        &self,
+        target: &PublicIpv4Target,
+    ) -> Result<PublicIpRefreshResult, Box<dyn std::error::Error + Send + Sync>> {
+        if target.lifecycle_state != LifecycleState::Running {
+            return Err(format!(
+                "instance must be RUNNING before refreshing public IPv4 (current: {:?})",
+                target.lifecycle_state
+            )
+            .into());
+        }
+
+        let client = self.make_client()?;
+        if target.public_ip.is_some() && target.public_ip_id.is_none() {
+            return Err("current public IPv4 was found, but its OCI public IP id could not be loaded; refusing to refresh without a deletable public IP id".into());
+        }
+        if let Some(public_ip_id) = &target.public_ip_id {
+            client.delete_public_ip(public_ip_id).await?;
+        }
+
+        let public_ip = client
+            .create_public_ip(&CreatePublicIpDetails {
+                compartment_id: target.compartment_id.clone(),
+                lifetime: "EPHEMERAL".to_string(),
+                private_ip_id: Some(target.private_ip_id.clone()),
+                display_name: target
+                    .vnic_display_name
+                    .as_ref()
+                    .map(|name| format!("{}-refreshed-public-ip", name)),
+            })
+            .await?;
+
+        Ok(PublicIpRefreshResult {
+            old_public_ip: target.public_ip.clone(),
+            new_public_ip: public_ip.ip_address,
+        })
+    }
+
+    async fn public_ipv4_target_for_instance(
+        &self,
+        client: &ComputeClient,
+        instance: Instance,
+    ) -> Result<PublicIpv4Target, Box<dyn std::error::Error + Send + Sync>> {
+        let attachments = client
+            .list_vnic_attachments(&instance.compartment_id, &instance.id)
+            .await?;
+        let attachment = attachments
+            .iter()
+            .find(|attachment| attachment.nic_index == Some(0) && attachment.vnic_id.is_some())
+            .or_else(|| {
+                attachments
+                    .iter()
+                    .find(|attachment| attachment.vnic_id.is_some())
+            })
+            .ok_or("no VNIC attachment found for instance")?;
+        let vnic_id = attachment
+            .vnic_id
+            .as_deref()
+            .ok_or("VNIC attachment does not include a VNIC id")?;
+
+        let vnic = client.get_vnic(vnic_id).await?;
+        let private_ips = client.list_private_ips(vnic_id).await?;
+        let private_ip = private_ips
+            .iter()
+            .find(|ip| ip.is_primary)
+            .or_else(|| private_ips.first())
+            .ok_or("no private IPv4 found on instance VNIC")?;
+
+        let vnic_public_ip = vnic.public_ip.clone();
+        let (public_ip, public_ip_error) = match vnic_public_ip.as_deref() {
+            Some(ip_address) => match client.get_public_ip_by_ip_address(ip_address).await {
+                Ok(public_ip) => (Some(public_ip), None),
+                Err(error) => (None, Some(format!("public IP id lookup failed: {}", error))),
+            },
+            None => (None, None),
+        };
+
+        Ok(PublicIpv4Target {
+            instance_id: instance.id,
+            display_name: instance.display_name,
+            lifecycle_state: instance.lifecycle_state,
+            private_ip_id: private_ip.id.clone(),
+            public_ip_id: public_ip.as_ref().map(|ip| ip.id.clone()),
+            public_ip: public_ip
+                .as_ref()
+                .map(|ip| ip.ip_address.clone())
+                .or(vnic_public_ip),
+            public_ip_error,
+            vnic_display_name: vnic.display_name,
+            compartment_id: instance.compartment_id,
+        })
     }
 }
 
