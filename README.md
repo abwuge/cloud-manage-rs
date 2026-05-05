@@ -17,11 +17,21 @@ Infrastructure.
 | AWS | Planned | — |
 | Azure | Planned | — |
 
+## Interfaces
+
+- **Interactive TUI** — `cargo run` drops into a menu driven by `dialoguer`.
+- **Non-interactive CLI** — every menu action is also a `clap` subcommand
+  for scripting / cron / automation.
+- **Embedded Web UI** — `cloud-manage serve` launches a self-contained
+  axum server whose frontend is compiled into the binary. Single file, no
+  Node build step. See [docs/web-ui.md](docs/web-ui.md).
+
 ## Documentation
 
 - [docs/](docs/) — full documentation index
 - [Getting Started](docs/getting-started.md)
 - [Configuration Reference](docs/configuration.md)
+- [Web UI](docs/web-ui.md)
 - [Oracle Cloud Provider](docs/providers/oracle.md)
 
 ## Components
@@ -41,6 +51,7 @@ cargo run -- refresh-ip                # choose an instance, then refresh public
 cargo run -- snipe --min-delay 3 --max-delay 10
 cargo run -- dns list                  # list Cloudflare DNS records
 cargo run -- dns upsert --type A --name app.example.com --content 203.0.113.10
+cargo run -- serve                     # embedded web UI on http://127.0.0.1:7878
 ```
 
 The wizard walks through everything needed to create your first instance.

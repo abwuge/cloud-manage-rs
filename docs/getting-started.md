@@ -90,6 +90,8 @@ cloud-manage snipe --min-delay 3 --max-delay 10 --max-attempts 100
 cloud-manage snipe --min-delay 3 --save  # also persist the override into config
 cloud-manage reconfigure               # run the full wizard
 cloud-manage quick-config              # run the instance-only wizard
+cloud-manage serve                     # start the embedded web UI (see docs/web-ui.md)
+cloud-manage serve --host 0.0.0.0 --port 9000
 ```
 
 When invoked through `cargo run`, separate cargo's own arguments from the
