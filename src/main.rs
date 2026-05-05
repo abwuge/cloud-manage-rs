@@ -193,9 +193,16 @@ async fn run_command(cmd: Command) -> AppResult<()> {
             let new_config = config::reconfigure_quick(&config).await?;
             config::save_config_and_exit(&new_config)?;
         }
-        Command::Serve { host, port } => {
+        Command::Serve { host, port, token } => {
             let config = config::load_existing_config()?;
-            web::serve(config, &host, port).await?;
+            let effective_token = token.or_else(|| {
+                config
+                    .web
+                    .token
+                    .clone()
+                    .filter(|t| !t.trim().is_empty())
+            });
+            web::serve(config, &host, port, effective_token).await?;
         }
     }
     Ok(())

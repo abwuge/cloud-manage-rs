@@ -18,11 +18,38 @@ The server reads `./config/config` at startup (the same file used by every
 other subcommand). Reconfiguring while the server is running requires a
 restart.
 
-> [!WARNING]
-> The web API has **no built-in authentication**. Keep it bound to
-> `127.0.0.1`, or put it behind a reverse proxy that terminates
-> authentication (nginx + basic auth, Caddy + forward_auth, Cloudflare
-> Tunnel + Access, etc.) before binding to a public interface.
+## Authentication
+
+The web API supports a simple bearer-token scheme. When a token is
+configured, **every** `/api/*` request must either carry an
+`Authorization: Bearer <token>` header or append `?token=<token>` to the
+URL (used for `EventSource` / SSE, which cannot set custom headers).
+
+A token can be supplied two ways, in priority order:
+
+1. `--token <value>` on the command line.
+2. The `[web]` section of `./config/config`:
+
+   ```toml
+   [web]
+   token = "replace-me-with-a-long-random-string"
+   ```
+
+If **no token is set**, the server starts without authentication. In that
+case keep it bound to `127.0.0.1` or place it behind an auth-terminating
+reverse proxy (nginx basic auth, Caddy `forward_auth`, Cloudflare Tunnel +
+Access, etc.).
+
+The frontend detects auth status via the public `GET /api/auth-status`
+endpoint and, when auth is required, prompts the user for the token on
+first load. The token is stored in `localStorage` under the key
+`cloudManageToken`. A **Sign out** button in the top-right header clears
+it.
+
+> [!NOTE]
+> The token is compared in constant time but is not hashed. Treat the
+> config file (`./config/config`) as a secret — it already contains OCI
+> private key paths and Cloudflare API tokens.
 
 ## Features
 
@@ -53,7 +80,8 @@ Base path: `/api`. All responses are JSON; errors use the shape
 | `GET` | `/dns?type=A&name=foo` | List Cloudflare DNS records (filters optional). |
 | `POST` | `/dns` | Upsert. Body: `{ type, name, content, ttl?, proxied? }`. |
 | `DELETE` | `/dns/:id` | Delete a DNS record by id. |
-| `GET` | `/snipe/stream` | Server-Sent Events stream for snipe progress. Query params: `min_delay`, `max_delay`, `max_attempts`, `bypass`. |
+| `GET` | `/snipe/stream` | Server-Sent Events stream for snipe progress. Query params: `min_delay`, `max_delay`, `max_attempts`, `bypass`, `token`. |
+| `GET` | `/auth-status` | Unauthenticated. Returns `{ "auth_required": bool }` so the frontend can decide whether to prompt for a token. |
 
 ### Snipe SSE events
 

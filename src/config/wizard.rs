@@ -322,6 +322,7 @@ impl ConfigWizard {
                 hostname_label,
             },
             snipe: default_config.snipe.clone(),
+            web: default_config.web.clone(),
         };
 
         println!("\n📝 Configuration Summary");

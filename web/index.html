@@ -135,6 +135,9 @@
           <span :class="loading.global && 'animate-spin inline-flex'"><i data-lucide="refresh-cw" class="w-4 h-4"></i></span>
           <span>Refresh</span>
         </button>
+        <button x-show="authRequired && authToken" class="btn btn-ghost" @click="signOut()" title="Sign out">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
+        </button>
       </div>
     </header>
 
@@ -503,6 +506,29 @@
   </div>
 </div>
 
+<!-- Auth modal -->
+<div x-show="showAuthModal" x-transition.opacity class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+  <div class="glass rounded-2xl max-w-sm w-full p-6">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-9 h-9 rounded-lg bg-brand-500/15 text-brand-300 flex items-center justify-center"><i data-lucide="lock" class="w-5 h-5"></i></div>
+      <div>
+        <h3 class="font-semibold text-white">Authentication Required</h3>
+        <p class="text-xs text-ink-200">Enter the bearer token to access this instance.</p>
+      </div>
+    </div>
+    <input type="password" class="input" x-model="authInput"
+           @keydown.enter="submitAuth()"
+           placeholder="Bearer token" autofocus />
+    <div x-show="authError" class="text-sm text-rose-300 mt-2" x-text="authError"></div>
+    <div class="flex justify-end gap-2 mt-5">
+      <button class="btn btn-primary" @click="submitAuth()" :disabled="!authInput">
+        <i data-lucide="log-in" class="w-4 h-4"></i>
+        <span>Sign in</span>
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Toasts -->
 <div class="fixed bottom-6 right-6 z-50 space-y-2">
   <template x-for="t in toasts" :key="t.id">
@@ -539,6 +565,12 @@ function app() {
 
     loading: { global: false, instances: false, dns: false, create: false, refresh: null, dnsSave: false },
 
+    authRequired: false,
+    authToken: null,
+    showAuthModal: false,
+    authInput: '',
+    authError: '',
+
     showCreateModal: false,
     createForm: { displayName: '' },
 
@@ -557,12 +589,91 @@ function app() {
 
     async init() {
       this.$watch('activeTab', () => this.$nextTick(() => lucide.createIcons()));
+      this.authToken = localStorage.getItem('cloudManageToken') || null;
+
+      // Detect whether auth is required (this endpoint is always public).
+      try {
+        const r = await fetch('/api/auth-status');
+        const body = await r.json();
+        this.authRequired = !!body.auth_required;
+      } catch (e) { /* ignore */ }
+
+      if (this.authRequired && !this.authToken) {
+        this.showAuthModal = true;
+        this.$nextTick(() => lucide.createIcons());
+        return;
+      }
+
       await this.refreshAll();
       this.pollTimer = setInterval(() => {
-        if (this.activeTab === 'instances' || this.activeTab === 'overview') {
+        if (!this.showAuthModal && (this.activeTab === 'instances' || this.activeTab === 'overview')) {
           this.loadInstances(true);
         }
       }, 30000);
+      this.$nextTick(() => lucide.createIcons());
+    },
+
+    async api(path, opts = {}) {
+      const headers = new Headers(opts.headers || {});
+      if (opts.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+      if (this.authToken) headers.set('Authorization', 'Bearer ' + this.authToken);
+      const r = await fetch(path, { ...opts, headers });
+      if (r.status === 401) {
+        // Invalidate and prompt again.
+        this.authToken = null;
+        localStorage.removeItem('cloudManageToken');
+        this.authRequired = true;
+        this.showAuthModal = true;
+        this.authError = 'Invalid or expired token.';
+        this.$nextTick(() => lucide.createIcons());
+        throw new Error('unauthorized');
+      }
+      return r;
+    },
+
+    async submitAuth() {
+      const t = (this.authInput || '').trim();
+      if (!t) return;
+      // Probe with a protected endpoint to verify.
+      try {
+        const r = await fetch('/api/config', {
+          headers: { 'Authorization': 'Bearer ' + t },
+        });
+        if (r.status === 401) {
+          this.authError = 'Invalid token.';
+          return;
+        }
+        if (!r.ok) {
+          this.authError = 'Server error: ' + r.status;
+          return;
+        }
+        this.authToken = t;
+        localStorage.setItem('cloudManageToken', t);
+        this.authInput = '';
+        this.authError = '';
+        this.showAuthModal = false;
+        await this.refreshAll();
+        if (!this.pollTimer) {
+          this.pollTimer = setInterval(() => {
+            if (!this.showAuthModal && (this.activeTab === 'instances' || this.activeTab === 'overview')) {
+              this.loadInstances(true);
+            }
+          }, 30000);
+        }
+        this.$nextTick(() => lucide.createIcons());
+      } catch (e) {
+        this.authError = 'Network error: ' + e.message;
+      }
+    },
+
+    signOut() {
+      this.authToken = null;
+      localStorage.removeItem('cloudManageToken');
+      this.config = null;
+      this.instances = [];
+      this.dns = [];
+      this.stopSnipe();
+      this.showAuthModal = true;
       this.$nextTick(() => lucide.createIcons());
     },
 
@@ -583,38 +694,37 @@ function app() {
 
     async loadConfig() {
       try {
-        const r = await fetch('/api/config');
+        const r = await this.api('/api/config');
         if (!r.ok) throw new Error((await r.json()).error || r.statusText);
         this.config = await r.json();
-      } catch (e) { this.toast('Failed to load config: ' + e.message, 'error'); }
+      } catch (e) { if (e.message !== 'unauthorized') this.toast('Failed to load config: ' + e.message, 'error'); }
     },
 
     async loadInstances(silent = false) {
       if (!silent) this.loading.instances = true;
       try {
-        const r = await fetch('/api/instances');
+        const r = await this.api('/api/instances');
         if (!r.ok) throw new Error((await r.json()).error || r.statusText);
         this.instances = await r.json();
-      } catch (e) { if (!silent) this.toast('Instances: ' + e.message, 'error'); }
+      } catch (e) { if (!silent && e.message !== 'unauthorized') this.toast('Instances: ' + e.message, 'error'); }
       finally { this.loading.instances = false; this.$nextTick(() => lucide.createIcons()); }
     },
 
     async loadDns() {
       this.loading.dns = true;
       try {
-        const r = await fetch('/api/dns');
+        const r = await this.api('/api/dns');
         if (!r.ok) throw new Error((await r.json()).error || r.statusText);
         this.dns = await r.json();
-      } catch (e) { this.toast('DNS: ' + e.message, 'error'); }
+      } catch (e) { if (e.message !== 'unauthorized') this.toast('DNS: ' + e.message, 'error'); }
       finally { this.loading.dns = false; this.$nextTick(() => lucide.createIcons()); }
     },
 
     async doCreate() {
       this.loading.create = true;
       try {
-        const r = await fetch('/api/instances', {
+        const r = await this.api('/api/instances', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ display_name: this.createForm.displayName || null }),
         });
         const body = await r.json();
@@ -637,9 +747,8 @@ function app() {
       if (!target) return;
       this.loading.refresh = target.instance_id;
       try {
-        const r = await fetch(`/api/instances/${encodeURIComponent(target.instance_id)}/refresh-ip`, {
+        const r = await this.api(`/api/instances/${encodeURIComponent(target.instance_id)}/refresh-ip`, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ update_dns: this.refreshForm.updateDns }),
         });
         const body = await r.json();
@@ -674,9 +783,8 @@ function app() {
     async saveDns() {
       this.loading.dnsSave = true;
       try {
-        const r = await fetch('/api/dns', {
+        const r = await this.api('/api/dns', {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
             type: this.dnsForm.record_type,
             name: this.dnsForm.name,
@@ -697,7 +805,7 @@ function app() {
     async deleteDns(record) {
       if (!confirm(`Delete ${record.record_type} ${record.name} → ${record.content}?`)) return;
       try {
-        const r = await fetch('/api/dns/' + encodeURIComponent(record.id), { method: 'DELETE' });
+        const r = await this.api('/api/dns/' + encodeURIComponent(record.id), { method: 'DELETE' });
         const body = await r.json();
         if (!r.ok) throw new Error(body.error || r.statusText);
         this.toast('Deleted', 'success');
@@ -717,6 +825,7 @@ function app() {
         max_attempts: this.snipe.maxAttempts,
         bypass: this.snipe.bypass,
       });
+      if (this.authToken) params.set('token', this.authToken);
       const es = new EventSource('/api/snipe/stream?' + params.toString());
       this.snipe.source = es;
 

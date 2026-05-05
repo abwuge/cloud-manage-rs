@@ -56,6 +56,14 @@ pub struct InstanceConfigFile {
     pub network: NetworkSettings,
     #[serde(default)]
     pub snipe: SnipeSettings,
+    #[serde(default)]
+    pub web: WebSettings,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WebSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -169,6 +177,7 @@ impl Default for InstanceConfigFile {
                 hostname_label: None,
             },
             snipe: SnipeSettings::default(),
+            web: WebSettings::default(),
         }
     }
 }

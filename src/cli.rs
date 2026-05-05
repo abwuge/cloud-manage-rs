@@ -38,6 +38,9 @@ pub enum Command {
         host: String,
         #[arg(long, default_value_t = 7878)]
         port: u16,
+        /// Bearer token required for all /api/* requests. Overrides [web].token.
+        #[arg(long)]
+        token: Option<String>,
     },
 }
 
