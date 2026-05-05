@@ -132,7 +132,7 @@
       </div>
       <div class="flex items-center gap-2">
         <button class="btn btn-ghost" @click="refreshAll()" :disabled="loading.global">
-          <i data-lucide="refresh-cw" class="w-4 h-4" :class="loading.global && 'animate-spin'"></i>
+          <span :class="loading.global && 'animate-spin inline-flex'"><i data-lucide="refresh-cw" class="w-4 h-4"></i></span>
           <span>Refresh</span>
         </button>
       </div>
@@ -218,7 +218,7 @@
           </div>
           <div class="flex gap-2">
             <button class="btn btn-ghost" @click="loadInstances()">
-              <i data-lucide="refresh-cw" class="w-4 h-4" :class="loading.instances && 'animate-spin'"></i>
+              <span :class="loading.instances && 'animate-spin inline-flex'"><i data-lucide="refresh-cw" class="w-4 h-4"></i></span>
               <span>Reload</span>
             </button>
             <button class="btn btn-primary" @click="showCreateModal = true">
@@ -265,7 +265,7 @@
                       <button class="btn btn-ghost"
                               :disabled="inst.lifecycle_state !== 'RUNNING' || loading.refresh === inst.instance_id"
                               @click="refreshIp(inst)">
-                        <i data-lucide="rotate-cw" class="w-4 h-4" :class="loading.refresh === inst.instance_id && 'animate-spin'"></i>
+                        <span :class="loading.refresh === inst.instance_id && 'animate-spin inline-flex'"><i data-lucide="rotate-cw" class="w-4 h-4"></i></span>
                         <span>Refresh IP</span>
                       </button>
                     </td>
@@ -286,7 +286,7 @@
           </div>
           <div class="flex gap-2">
             <button class="btn btn-ghost" @click="loadDns()">
-              <i data-lucide="refresh-cw" class="w-4 h-4" :class="loading.dns && 'animate-spin'"></i>
+              <span :class="loading.dns && 'animate-spin inline-flex'"><i data-lucide="refresh-cw" class="w-4 h-4"></i></span>
               <span>Reload</span>
             </button>
             <button class="btn btn-primary" @click="openDnsModal()">
@@ -425,7 +425,7 @@
     <div class="flex justify-end gap-2">
       <button class="btn btn-ghost" @click="showCreateModal = false">Cancel</button>
       <button class="btn btn-primary" :disabled="loading.create" @click="doCreate()">
-        <i data-lucide="rocket" class="w-4 h-4" :class="loading.create && 'animate-pulse'"></i>
+        <span :class="loading.create && 'animate-pulse inline-flex'"><i data-lucide="rocket" class="w-4 h-4"></i></span>
         <span x-text="loading.create ? 'Launching…' : 'Launch'"></span>
       </button>
     </div>
@@ -451,7 +451,7 @@
     <div class="flex justify-end gap-2">
       <button class="btn btn-ghost" @click="refreshTarget = null">Cancel</button>
       <button class="btn btn-primary" :disabled="loading.refresh === refreshTarget?.instance_id" @click="doRefreshIp()">
-        <i data-lucide="rotate-cw" class="w-4 h-4" :class="loading.refresh && 'animate-spin'"></i>
+        <span :class="loading.refresh && 'animate-spin inline-flex'"><i data-lucide="rotate-cw" class="w-4 h-4"></i></span>
         <span x-text="loading.refresh ? 'Refreshing…' : 'Refresh'"></span>
       </button>
     </div>
