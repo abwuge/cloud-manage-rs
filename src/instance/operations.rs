@@ -1,7 +1,8 @@
 use crate::config::config::InstanceConfigFile;
+use crate::dns;
 use crate::providers::oracle::{OracleInstanceCreator, PublicIpv4Target};
 use crate::ui::ghost_input::ghost_input;
-use dialoguer::{Select, theme::ColorfulTheme};
+use dialoguer::{Confirm, Select, theme::ColorfulTheme};
 use oci_rust_sdk::compute::models::LifecycleState;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -226,6 +227,7 @@ pub async fn refresh_public_ipv4(
                 None => println!("Old public IPv4: none"),
             }
             println!("New public IPv4: {}", result.new_public_ip);
+            maybe_update_dns_after_refresh(config, &result).await?;
         }
         Err(e) => {
             println!("\n❌ Public IPv4 refresh failed: {}", e);
@@ -270,6 +272,7 @@ async fn refresh_public_ipv4_target(
                 None => println!("Old public IPv4: none"),
             }
             println!("New public IPv4: {}", result.new_public_ip);
+            maybe_update_dns_after_refresh(config, &result).await?;
             Ok(Some(result))
         }
         Err(e) => {
@@ -280,6 +283,47 @@ async fn refresh_public_ipv4_target(
             Ok(None)
         }
     }
+}
+
+async fn maybe_update_dns_after_refresh(
+    config: &InstanceConfigFile,
+    result: &crate::providers::oracle::PublicIpRefreshResult,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let Some(old_ip) = result.old_public_ip.as_deref() else {
+        println!("No old public IPv4 found; skipping DNS record update.");
+        return Ok(());
+    };
+
+    let update_dns = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Update Cloudflare DNS records pointing to the old IP?")
+        .default(true)
+        .interact()?;
+
+    if !update_dns {
+        return Ok(());
+    }
+
+    println!(
+        "\n🔄 Updating Cloudflare A records from {} to {}...",
+        old_ip, result.new_public_ip
+    );
+
+    match dns::update_a_records_pointing_to_ip(config, old_ip, &result.new_public_ip).await {
+        Ok(records) if records.is_empty() => {
+            println!("No Cloudflare A records pointed to {}.", old_ip);
+        }
+        Ok(records) => {
+            println!("✅ Updated {} Cloudflare DNS record(s):", records.len());
+            for record in records {
+                println!("  {} -> {}", record.name, record.content);
+            }
+        }
+        Err(error) => {
+            println!("❌ Cloudflare DNS update failed: {}", error);
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn load_public_ipv4_targets(

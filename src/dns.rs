@@ -104,6 +104,38 @@ pub async fn handle_dns_delete_interactive(
     handle_dns_command(config, DnsCommand::Delete { record_id }).await
 }
 
+pub async fn update_a_records_pointing_to_ip(
+    config: &InstanceConfigFile,
+    old_ip: &str,
+    new_ip: &str,
+) -> Result<Vec<DnsRecord>, Box<dyn std::error::Error + Send + Sync>> {
+    let client = DnsClient::new(&config.cloudflare)?;
+    let records = client.list_records(Some("A"), None).await?;
+    let mut updated = Vec::new();
+
+    for record in records
+        .into_iter()
+        .filter(|record| record.content == old_ip)
+    {
+        let updated_record = client
+            .update_record(
+                &record.id,
+                &DnsRecordRequest {
+                    record_type: record.record_type,
+                    name: record.name,
+                    content: new_ip.to_string(),
+                    ttl: record.ttl,
+                    proxied: record.proxied,
+                },
+                record.proxied,
+            )
+            .await?;
+        updated.push(updated_record);
+    }
+
+    Ok(updated)
+}
+
 fn optional_input(label: &str) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
     optional_input_with_default(label, "")
 }
