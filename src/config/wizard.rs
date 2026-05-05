@@ -1,6 +1,8 @@
-use crate::config::{InstanceConfigFile, InstanceSettings, NetworkSettings, OracleConfig};
+use crate::config::{
+    CloudflareConfig, InstanceConfigFile, InstanceSettings, NetworkSettings, OracleConfig,
+};
 use crate::ui::ghost_input::ghost_input;
-use dialoguer::{theme::ColorfulTheme, Confirm, Select};
+use dialoguer::{Confirm, Select, theme::ColorfulTheme};
 use oci_rust_sdk::compute::ComputeClient;
 use oci_rust_sdk::compute::models::{AvailabilityDomain, Image, Subnet};
 use std::sync::Arc;
@@ -16,7 +18,10 @@ impl ConfigWizard {
         }
     }
 
-    pub async fn run(&self, default_config: &InstanceConfigFile) -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn run(
+        &self,
+        default_config: &InstanceConfigFile,
+    ) -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
         println!("\n🚀 Oracle Cloud Instance Configuration Wizard");
         println!("================================\n");
 
@@ -34,12 +39,20 @@ impl ConfigWizard {
             let arm_id = default_config.oracle.image_id_arm.clone();
             tokio::spawn(async move {
                 let amd = if is_valid_ocid(&amd_id, "image") {
-                    client.get_image(&amd_id).await.map_err(|e| e.to_string()).ok()
+                    client
+                        .get_image(&amd_id)
+                        .await
+                        .map_err(|e| e.to_string())
+                        .ok()
                 } else {
                     None
                 };
                 let arm = if is_valid_ocid(&arm_id, "image") {
-                    client.get_image(&arm_id).await.map_err(|e| e.to_string()).ok()
+                    client
+                        .get_image(&arm_id)
+                        .await
+                        .map_err(|e| e.to_string())
+                        .ok()
                 } else {
                     None
                 };
@@ -59,12 +72,7 @@ impl ConfigWizard {
         let mut subnet_fetch = Some({
             let client = client.clone();
             let cid = candidate_compartment.clone();
-            tokio::spawn(async move {
-                client
-                    .list_subnets(&cid)
-                    .await
-                    .map_err(|e| e.to_string())
-            })
+            tokio::spawn(async move { client.list_subnets(&cid).await.map_err(|e| e.to_string()) })
         });
 
         println!("📋 Basic Information");
@@ -100,7 +108,8 @@ impl ConfigWizard {
                     Vec::new()
                 }),
         };
-        let availability_domain = self.pick_availability_domain(&ad_result, &default_config.oracle.availability_domain)?;
+        let availability_domain =
+            self.pick_availability_domain(&ad_result, &default_config.oracle.availability_domain)?;
 
         println!("\n💿 Image Configuration");
         let (amd_image, arm_image) = image_fetch
@@ -118,7 +127,10 @@ impl ConfigWizard {
                 );
                 (amd.id, arm.id)
             }
-            _ => self.select_images(&client, &compartment_id, default_config).await?,
+            _ => {
+                self.select_images(&client, &compartment_id, default_config)
+                    .await?
+            }
         };
 
         println!("\n🌐 Network Configuration");
@@ -210,7 +222,8 @@ impl ConfigWizard {
             None
         };
 
-        let ssh_public_key = ghost_input("SSH public key", "", &default_config.oracle.ssh_public_key)?;
+        let ssh_public_key =
+            ghost_input("SSH public key", "", &default_config.oracle.ssh_public_key)?;
 
         let use_hostname = Confirm::with_theme(&self.theme)
             .with_prompt("Set hostname label?")
@@ -218,7 +231,11 @@ impl ConfigWizard {
             .interact()?;
 
         let hostname_label = if use_hostname {
-            let existing = default_config.network.hostname_label.as_deref().unwrap_or("");
+            let existing = default_config
+                .network
+                .hostname_label
+                .as_deref()
+                .unwrap_or("");
             Some(ghost_input("Hostname label", "", existing)?)
         } else {
             None
@@ -229,16 +246,30 @@ impl ConfigWizard {
             "AMD Micro Instance (VM.Standard.E2.1.Micro)",
             "ARM Flex Instance (VM.Standard.A1.Flex)",
         ];
-        let default_type_index = if default_config.instance.instance_type == "amd" { 0 } else { 1 };
+        let default_type_index = if default_config.instance.instance_type == "amd" {
+            0
+        } else {
+            1
+        };
         let instance_type_index = Select::with_theme(&self.theme)
             .with_prompt("Select instance type")
             .items(&instance_types)
             .default(default_type_index)
             .interact()?;
-        let instance_type = if instance_type_index == 0 { "amd" } else { "arm" }.to_string();
+        let instance_type = if instance_type_index == 0 {
+            "amd"
+        } else {
+            "arm"
+        }
+        .to_string();
 
         let (arm_ocpus, arm_memory_gb) = if instance_type == "arm" {
-            let ocpu_options = vec!["1 OCPU (6 GB)", "2 OCPU (12 GB)", "3 OCPU (18 GB)", "4 OCPU (24 GB)"];
+            let ocpu_options = vec![
+                "1 OCPU (6 GB)",
+                "2 OCPU (12 GB)",
+                "3 OCPU (18 GB)",
+                "4 OCPU (24 GB)",
+            ];
             let default_ocpu_index = default_config
                 .instance
                 .arm_ocpus
@@ -267,6 +298,7 @@ impl ConfigWizard {
 
         let config = InstanceConfigFile {
             oci: default_config.oci.clone(),
+            cloudflare: default_config.cloudflare.clone(),
             oracle: OracleConfig {
                 compartment_id,
                 availability_domain,
@@ -294,14 +326,37 @@ impl ConfigWizard {
 
         println!("\n📝 Configuration Summary");
         println!("============");
-        println!("Instance Type: {}", if config.instance.instance_type == "amd" { "AMD Micro" } else { "ARM Flex" });
+        println!(
+            "Instance Type: {}",
+            if config.instance.instance_type == "amd" {
+                "AMD Micro"
+            } else {
+                "ARM Flex"
+            }
+        );
         println!("Instance Name: {}", config.instance.display_name);
-        if let (Some(ocpus), Some(memory)) = (config.instance.arm_ocpus, config.instance.arm_memory_gb) {
+        if let (Some(ocpus), Some(memory)) =
+            (config.instance.arm_ocpus, config.instance.arm_memory_gb)
+        {
             println!("OCPU: {}, Memory: {} GB", ocpus, memory);
         }
         println!("Boot Volume: {} GB", config.instance.boot_volume_size_gb);
-        println!("Public IPv4: {}", if config.network.assign_public_ip { "Yes" } else { "No" });
-        println!("IPv6: {}", if config.network.assign_ipv6 { "Yes" } else { "No" });
+        println!(
+            "Public IPv4: {}",
+            if config.network.assign_public_ip {
+                "Yes"
+            } else {
+                "No"
+            }
+        );
+        println!(
+            "IPv6: {}",
+            if config.network.assign_ipv6 {
+                "Yes"
+            } else {
+                "No"
+            }
+        );
         if let Some(ip) = &config.network.private_ip {
             println!("Private IP: {}", ip);
         }
@@ -356,7 +411,11 @@ impl ConfigWizard {
         if subnets.is_empty() {
             let subnet_id = ghost_input("Subnet OCID", "", default_subnet)?;
             let cidr = ghost_input("Subnet CIDR (leave blank if unknown)", "", "")?;
-            let cidr = if cidr.trim().is_empty() { None } else { Some(cidr) };
+            let cidr = if cidr.trim().is_empty() {
+                None
+            } else {
+                Some(cidr)
+            };
             return Ok((subnet_id, cidr, None));
         }
 
@@ -370,7 +429,10 @@ impl ConfigWizard {
                 )
             })
             .collect();
-        let default_index = subnets.iter().position(|s| s.id == default_subnet).unwrap_or(0);
+        let default_index = subnets
+            .iter()
+            .position(|s| s.id == default_subnet)
+            .unwrap_or(0);
         let selection = Select::with_theme(&self.theme)
             .with_prompt("Select subnet")
             .items(&items)
@@ -378,7 +440,11 @@ impl ConfigWizard {
             .interact()?;
 
         let s = &subnets[selection];
-        Ok((s.id.clone(), s.cidr_block.clone(), s.ipv6_cidr_block.clone()))
+        Ok((
+            s.id.clone(),
+            s.cidr_block.clone(),
+            s.ipv6_cidr_block.clone(),
+        ))
     }
 
     async fn select_images(
@@ -398,7 +464,8 @@ impl ConfigWizard {
                 ("Red Hat Enterprise Linux", "Red Hat Enterprise Linux"),
             ];
 
-            let mut dist_items: Vec<String> = distributions.iter().map(|(d, _)| d.to_string()).collect();
+            let mut dist_items: Vec<String> =
+                distributions.iter().map(|(d, _)| d.to_string()).collect();
             dist_items.push("← Back".to_string());
 
             let dist_selection = Select::with_theme(&self.theme)
@@ -411,7 +478,10 @@ impl ConfigWizard {
             }
             let (_, api_name) = distributions[dist_selection];
 
-            let images = match client.list_images_filtered(compartment_id, Some(api_name), None).await {
+            let images = match client
+                .list_images_filtered(compartment_id, Some(api_name), None)
+                .await
+            {
                 Ok(imgs) => imgs,
                 Err(e) => {
                     println!("⚠️  Failed to fetch {} images: {}", api_name, e);
@@ -434,17 +504,29 @@ impl ConfigWizard {
                 {
                     continue;
                 }
-                let version = img.operating_system_version.clone().unwrap_or_else(|| "Unknown".to_string());
+                let version = img
+                    .operating_system_version
+                    .clone()
+                    .unwrap_or_else(|| "Unknown".to_string());
                 let major_version = if api_name == "Windows" {
-                    if name_lower.contains("2025") { "2025".to_string() }
-                    else if name_lower.contains("2022") { "2022".to_string() }
-                    else if name_lower.contains("2019") { "2019".to_string() }
-                    else if name_lower.contains("2016") { "2016".to_string() }
-                    else { version.split('.').next().unwrap_or(&version).to_string() }
+                    if name_lower.contains("2025") {
+                        "2025".to_string()
+                    } else if name_lower.contains("2022") {
+                        "2022".to_string()
+                    } else if name_lower.contains("2019") {
+                        "2019".to_string()
+                    } else if name_lower.contains("2016") {
+                        "2016".to_string()
+                    } else {
+                        version.split('.').next().unwrap_or(&version).to_string()
+                    }
                 } else {
                     version.split('.').next().unwrap_or(&version).to_string()
                 };
-                version_map.entry(major_version).or_insert_with(Vec::new).push(img);
+                version_map
+                    .entry(major_version)
+                    .or_insert_with(Vec::new)
+                    .push(img);
             }
 
             if version_map.is_empty() {
@@ -455,7 +537,11 @@ impl ConfigWizard {
             let mut versions: Vec<_> = version_map.keys().collect();
             versions.sort_by(|a, b| b.cmp(a));
 
-            let mut version_items: Vec<String> = versions.iter().take(3).map(|v| format!("Version {}", v)).collect();
+            let mut version_items: Vec<String> = versions
+                .iter()
+                .take(3)
+                .map(|v| format!("Version {}", v))
+                .collect();
             version_items.push("← Back".to_string());
             let version_selection = Select::with_theme(&self.theme)
                 .with_prompt("Select version")
@@ -494,16 +580,28 @@ impl ConfigWizard {
                 .collect();
 
             let image_id_amd = if !amd_images.is_empty() {
-                let latest = amd_images.iter().max_by_key(|img| &img.display_name).unwrap();
-                println!("\n✅ AMD Image: {}", latest.display_name.as_deref().unwrap_or("N/A"));
+                let latest = amd_images
+                    .iter()
+                    .max_by_key(|img| &img.display_name)
+                    .unwrap();
+                println!(
+                    "\n✅ AMD Image: {}",
+                    latest.display_name.as_deref().unwrap_or("N/A")
+                );
                 latest.id.clone()
             } else {
                 println!("⚠️  No AMD images found");
                 ghost_input("AMD Image OCID", "", &default_config.oracle.image_id_amd)?
             };
             let image_id_arm = if !arm_images.is_empty() {
-                let latest = arm_images.iter().max_by_key(|img| &img.display_name).unwrap();
-                println!("✅ ARM Image: {}", latest.display_name.as_deref().unwrap_or("N/A"));
+                let latest = arm_images
+                    .iter()
+                    .max_by_key(|img| &img.display_name)
+                    .unwrap();
+                println!(
+                    "✅ ARM Image: {}",
+                    latest.display_name.as_deref().unwrap_or("N/A")
+                );
                 latest.id.clone()
             } else {
                 println!("⚠️  No ARM images found");
@@ -514,7 +612,10 @@ impl ConfigWizard {
         }
     }
 
-    pub async fn quick_config(&self, base_config: &InstanceConfigFile) -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn quick_config(
+        &self,
+        base_config: &InstanceConfigFile,
+    ) -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
         println!("\n⚡ Quick Configuration Mode");
         println!("================\n");
 
@@ -524,12 +625,22 @@ impl ConfigWizard {
             .items(&instance_types)
             .default(0)
             .interact()?;
-        let instance_type = if instance_type_index == 0 { "amd" } else { "arm" }.to_string();
+        let instance_type = if instance_type_index == 0 {
+            "amd"
+        } else {
+            "arm"
+        }
+        .to_string();
 
         let display_name = ghost_input("Instance Name", "", &base_config.instance.display_name)?;
 
         let (arm_ocpus, arm_memory_gb) = if instance_type == "arm" {
-            let ocpu_options = vec!["1 OCPU (6 GB)", "2 OCPU (12 GB)", "3 OCPU (18 GB)", "4 OCPU (24 GB)"];
+            let ocpu_options = vec![
+                "1 OCPU (6 GB)",
+                "2 OCPU (12 GB)",
+                "3 OCPU (18 GB)",
+                "4 OCPU (24 GB)",
+            ];
             let ocpu_index = Select::with_theme(&self.theme)
                 .with_prompt("Select configuration")
                 .items(&ocpu_options)
@@ -553,6 +664,71 @@ impl ConfigWizard {
         config.instance.arm_memory_gb = arm_memory_gb;
         config.network.assign_public_ip = assign_public_ip;
         Ok(config)
+    }
+
+    pub async fn cloudflare_config(
+        &self,
+        base_config: &InstanceConfigFile,
+    ) -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
+        println!("\n☁️  Cloudflare DNS Configuration");
+        println!("===============================\n");
+        println!("Use an API token scoped to the target zone with Zone:DNS Edit permission.");
+        println!(
+            "Domain accepts either a zone like `example.com` or a record mapping like `www@example.com`."
+        );
+
+        let api_token = ghost_input(
+            "API token",
+            "",
+            &mask_existing_secret(&base_config.cloudflare.api_token),
+        )?;
+        let api_token = if api_token.chars().all(|c| c == '*') {
+            base_config.cloudflare.api_token.clone()
+        } else {
+            api_token
+        };
+        let default_domain = default_cloudflare_domain(&base_config.cloudflare);
+        let domain = ghost_input("Domain", "", &default_domain)?;
+        let (record_name, zone_name) = parse_cloudflare_domain(&domain);
+
+        let mut config = base_config.clone();
+        config.cloudflare = CloudflareConfig {
+            api_token,
+            zone_name,
+            record_name,
+        };
+        Ok(config)
+    }
+}
+
+fn default_cloudflare_domain(config: &CloudflareConfig) -> String {
+    match (&config.record_name, config.zone_name.is_empty()) {
+        (Some(record), false) => format!("{}@{}", record, config.zone_name),
+        _ => config.zone_name.clone(),
+    }
+}
+
+fn parse_cloudflare_domain(value: &str) -> (Option<String>, String) {
+    let trimmed = value.trim();
+    if let Some((record, zone)) = trimmed.split_once('@') {
+        let record = record.trim();
+        let zone = zone.trim();
+        let record = if record.is_empty() {
+            None
+        } else {
+            Some(record.to_string())
+        };
+        (record, zone.to_string())
+    } else {
+        (None, trimmed.to_string())
+    }
+}
+
+fn mask_existing_secret(value: &str) -> String {
+    if value.is_empty() {
+        String::new()
+    } else {
+        "********".to_string()
     }
 }
 

@@ -30,6 +30,11 @@ region      = "us-phoenix-1"
 key_file    = "./config/oci_api_key.pem"
 # passphrase = "..."  # optional
 
+[cloudflare]
+api_token = "cf_api_token_with_zone_dns_edit"
+zone_name = "example.com"
+record_name = "app" # optional default record
+
 [oracle]
 compartment_id      = "ocid1.compartment.oc1..xxx"
 availability_domain = "Uocm:PHX-AD-1"
@@ -63,6 +68,19 @@ max_attempts        = 0      # 0 = unlimited
 OCI authentication. The fields mirror the standard `~/.oci/config` INI file:
 `user`, `fingerprint`, `tenancy`, `region`, `key_file`, optional `passphrase`.
 See [Oracle guide](providers/oracle.md#auth-setup) for how to obtain them.
+
+### `[cloudflare]`
+
+Cloudflare DNS authentication. Only API token auth is supported; global API
+keys and email/key auth are intentionally not represented in the config.
+The UI accepts `record@zone`, such as `app@example.com`, and stores it as
+`record_name = "app"` plus `zone_name = "example.com"`.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `api_token` | string | Cloudflare API token scoped to the target zone with **Zone:DNS Edit** permission. |
+| `zone_name` | string | Cloudflare zone/domain name, for example `example.com`. The SDK resolves the zone ID online. |
+| `record_name` | optional string | Default DNS record name used by the interactive DNS prompts. |
 
 ### `[oracle]`
 

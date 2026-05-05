@@ -13,6 +13,12 @@ pub struct DnsRecord {
     pub proxied: Option<bool>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Zone {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct DnsRecordRequest {
     pub record_type: String,

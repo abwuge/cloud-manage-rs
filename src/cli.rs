@@ -10,6 +10,10 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     Create,
+    Dns {
+        #[command(subcommand)]
+        command: DnsCommand,
+    },
     Snipe {
         #[arg(long)]
         min_delay: Option<f64>,
@@ -25,4 +29,29 @@ pub enum Command {
     ShowConfig,
     Reconfigure,
     QuickConfig,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DnsCommand {
+    List {
+        #[arg(long = "type")]
+        record_type: Option<String>,
+        #[arg(long)]
+        name: Option<String>,
+    },
+    Upsert {
+        #[arg(long = "type")]
+        record_type: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        content: String,
+        #[arg(long, default_value_t = 1)]
+        ttl: u32,
+        #[arg(long)]
+        proxied: Option<bool>,
+    },
+    Delete {
+        record_id: String,
+    },
 }

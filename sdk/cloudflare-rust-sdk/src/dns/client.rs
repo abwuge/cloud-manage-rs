@@ -3,14 +3,14 @@ use serde::Deserialize;
 
 use crate::auth::ConfigurationProvider;
 
-use super::models::{DnsRecord, DnsRecordBody, DnsRecordRequest};
+use super::models::{DnsRecord, DnsRecordBody, DnsRecordRequest, Zone};
 
 const API_BASE: &str = "https://api.cloudflare.com/client/v4";
 
 pub struct DnsClient {
     http_client: Client,
     api_token: String,
-    zone_id: String,
+    zone_name: String,
 }
 
 impl DnsClient {
@@ -21,8 +21,30 @@ impl DnsClient {
         Ok(Self {
             http_client: Client::new(),
             api_token: config.api_token()?,
-            zone_id: config.zone_id()?,
+            zone_name: config.zone_name()?,
         })
+    }
+
+    /// Resolve the configured zone name to a Cloudflare zone ID.
+    pub async fn resolve_zone_id(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let zones = self.list_zones(Some(&self.zone_name)).await?;
+        zones
+            .into_iter()
+            .find(|z| z.name == self.zone_name)
+            .map(|z| z.id)
+            .ok_or_else(|| format!("Cloudflare zone not found: {}", self.zone_name).into())
+    }
+
+    /// List Cloudflare zones, optionally filtered by zone name.
+    pub async fn list_zones(
+        &self,
+        name: Option<&str>,
+    ) -> Result<Vec<Zone>, Box<dyn std::error::Error + Send + Sync>> {
+        let mut request = self.http_client.get(format!("{API_BASE}/zones"));
+        if let Some(name) = name {
+            request = request.query(&[("name", name)]);
+        }
+        self.send(request).await
     }
 
     /// List DNS records, optionally filtered by type and name.
@@ -31,7 +53,8 @@ impl DnsClient {
         record_type: Option<&str>,
         name: Option<&str>,
     ) -> Result<Vec<DnsRecord>, Box<dyn std::error::Error + Send + Sync>> {
-        let mut request = self.http_client.get(self.zone_records_url());
+        let zone_id = self.resolve_zone_id().await?;
+        let mut request = self.http_client.get(self.zone_records_url(&zone_id));
         if let Some(record_type) = record_type {
             request = request.query(&[("type", record_type)]);
         }
@@ -70,7 +93,12 @@ impl DnsClient {
             ttl: record.ttl,
             proxied: record.proxied,
         };
-        self.send(self.http_client.post(self.zone_records_url()).json(&body))
+        let zone_id = self.resolve_zone_id().await?;
+        self.send(
+            self.http_client
+                .post(self.zone_records_url(&zone_id))
+                .json(&body),
+        )
             .await
     }
 
@@ -88,9 +116,10 @@ impl DnsClient {
             ttl: record.ttl,
             proxied,
         };
+        let zone_id = self.resolve_zone_id().await?;
         self.send(
             self.http_client
-                .request(Method::PATCH, self.record_url(record_id))
+                .request(Method::PATCH, self.record_url(&zone_id, record_id))
                 .json(&body),
         )
         .await
@@ -102,17 +131,20 @@ impl DnsClient {
         record_id: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let _: serde_json::Value = self
-            .send(self.http_client.delete(self.record_url(record_id)))
+            .send(
+                self.http_client
+                    .delete(self.record_url(&self.resolve_zone_id().await?, record_id)),
+            )
             .await?;
         Ok(())
     }
 
-    fn zone_records_url(&self) -> String {
-        format!("{API_BASE}/zones/{}/dns_records", self.zone_id)
+    fn zone_records_url(&self, zone_id: &str) -> String {
+        format!("{API_BASE}/zones/{zone_id}/dns_records")
     }
 
-    fn record_url(&self, record_id: &str) -> String {
-        format!("{}/{}", self.zone_records_url(), record_id)
+    fn record_url(&self, zone_id: &str, record_id: &str) -> String {
+        format!("{}/{}", self.zone_records_url(zone_id), record_id)
     }
 
     async fn send<T: for<'de> Deserialize<'de>>(

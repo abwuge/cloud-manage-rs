@@ -2,6 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+use cloudflare_rust_sdk::auth::{
+    AuthError as CloudflareAuthError, ConfigurationProvider as CloudflareConfigurationProvider,
+    Result as CloudflareAuthResult,
+};
 use oci_rust_sdk::auth::{AuthError, ConfigurationProvider, Result as AuthResult};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -45,6 +49,8 @@ impl ConfigurationProvider for OciAuthConfig {
 pub struct InstanceConfigFile {
     #[serde(default)]
     pub oci: OciAuthConfig,
+    #[serde(default)]
+    pub cloudflare: CloudflareConfig,
     pub oracle: OracleConfig,
     pub instance: InstanceSettings,
     pub network: NetworkSettings,
@@ -65,6 +71,34 @@ impl Default for SnipeSettings {
             min_delay_secs: 5.0,
             max_delay_secs: 30.0,
             max_attempts: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CloudflareConfig {
+    #[serde(default)]
+    pub api_token: String,
+    #[serde(default)]
+    pub zone_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record_name: Option<String>,
+}
+
+impl CloudflareConfigurationProvider for CloudflareConfig {
+    fn api_token(&self) -> CloudflareAuthResult<String> {
+        if self.api_token.trim().is_empty() {
+            Err(CloudflareAuthError::MissingValue("api_token".to_string()))
+        } else {
+            Ok(self.api_token.clone())
+        }
+    }
+
+    fn zone_name(&self) -> CloudflareAuthResult<String> {
+        if self.zone_name.trim().is_empty() {
+            Err(CloudflareAuthError::MissingValue("zone_name".to_string()))
+        } else {
+            Ok(self.zone_name.clone())
         }
     }
 }
@@ -107,6 +141,11 @@ impl Default for InstanceConfigFile {
     fn default() -> Self {
         Self {
             oci: OciAuthConfig::default(),
+            cloudflare: CloudflareConfig {
+                api_token: String::new(),
+                zone_name: String::new(),
+                record_name: None,
+            },
             oracle: OracleConfig {
                 compartment_id: "ocid1.compartment.oc1..your-compartment-id".to_string(),
                 availability_domain: "your-region-AD-1".to_string(),
@@ -158,5 +197,4 @@ impl InstanceConfigFile {
     pub fn exists(path: impl AsRef<Path>) -> bool {
         path.as_ref().exists()
     }
-
 }

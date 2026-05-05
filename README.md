@@ -13,6 +13,7 @@ Infrastructure.
 | Provider | Status | Docs |
 | --- | --- | --- |
 | Oracle Cloud Infrastructure | Implemented | [docs/providers/oracle.md](docs/providers/oracle.md) |
+| Cloudflare DNS | Implemented | [docs/providers/cloudflare.md](docs/providers/cloudflare.md) |
 | AWS | Planned | — |
 | Azure | Planned | — |
 
@@ -27,6 +28,8 @@ Infrastructure.
 
 - [OCI Rust SDK](sdk/oci-rust-sdk) — hand-crafted Oracle Cloud Infrastructure
   SDK used by this tool
+- [Cloudflare Rust SDK](sdk/cloudflare-rust-sdk) — hand-crafted Cloudflare DNS
+  SDK used by this tool
 
 ## Quick Start
 
@@ -35,6 +38,8 @@ cargo run                              # interactive menu (runs wizard if needed
 cargo run -- show-config               # non-interactive: print current config
 cargo run -- create                    # non-interactive: launch one instance
 cargo run -- snipe --min-delay 3 --max-delay 10
+cargo run -- dns list                  # list Cloudflare DNS records
+cargo run -- dns upsert --type A --name app.example.com --content 203.0.113.10
 ```
 
 The wizard walks through everything needed to create your first instance.

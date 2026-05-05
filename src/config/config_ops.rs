@@ -3,7 +3,8 @@ use crate::config::wizard::ConfigWizard;
 
 const CONFIG_FILE: &str = "./config/config";
 
-pub async fn load_or_create_config() -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn load_or_create_config()
+-> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
     if InstanceConfigFile::exists(CONFIG_FILE) {
         println!("📂 Loading config from: {}", CONFIG_FILE);
         match InstanceConfigFile::load_from_file(CONFIG_FILE) {
@@ -17,20 +18,19 @@ pub async fn load_or_create_config() -> Result<InstanceConfigFile, Box<dyn std::
             }
         }
     } else {
-        println!("📝 Config file not found. Starting configuration wizard...\n");
+        println!("📝 Config file not found. Creating default configuration...\n");
     }
 
-    let wizard = ConfigWizard::new();
-    let default_config = InstanceConfigFile::default();
-    let config: InstanceConfigFile = wizard.run(&default_config).await?;
-
+    let config = InstanceConfigFile::default();
     config.save_to_file(CONFIG_FILE)?;
     println!("\n✅ Configuration saved to: {}", CONFIG_FILE);
+    println!("Use each provider menu to complete its configuration.");
 
     Ok(config)
 }
 
-pub async fn reconfigure_full() -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn reconfigure_full()
+-> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
     println!("\n🔧 Full Reconfiguration");
 
     let current_config = if InstanceConfigFile::exists(CONFIG_FILE) {
@@ -42,33 +42,84 @@ pub async fn reconfigure_full() -> Result<InstanceConfigFile, Box<dyn std::error
     ConfigWizard::new().run(&current_config).await
 }
 
-pub async fn reconfigure_quick(base_config: &InstanceConfigFile) -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn reconfigure_quick(
+    base_config: &InstanceConfigFile,
+) -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
     ConfigWizard::new().quick_config(base_config).await
 }
 
-pub fn display_config(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn reconfigure_cloudflare(
+    base_config: &InstanceConfigFile,
+) -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
+    ConfigWizard::new().cloudflare_config(base_config).await
+}
+
+pub fn display_config(
+    config: &InstanceConfigFile,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("\n📋 Current Configuration");
     println!("═══════════════════════════════════════");
+    display_oracle_config(config)?;
+    display_cloudflare_config(config)?;
+    Ok(())
+}
+
+pub fn display_oracle_config(
+    config: &InstanceConfigFile,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("\n🔹 Oracle Cloud Config:");
     println!("  Compartment ID: {}", config.oracle.compartment_id);
-    println!("  Availability Domain: {}", config.oracle.availability_domain);
+    println!(
+        "  Availability Domain: {}",
+        config.oracle.availability_domain
+    );
     println!("  Subnet ID: {}", config.oracle.subnet_id);
     println!("  AMD Image: {}", config.oracle.image_id_amd);
     println!("  ARM Image: {}", config.oracle.image_id_arm);
-    println!("  SSH Public Key: {}...", &config.oracle.ssh_public_key.chars().take(50).collect::<String>());
-    
+    println!(
+        "  SSH Public Key: {}...",
+        &config
+            .oracle
+            .ssh_public_key
+            .chars()
+            .take(50)
+            .collect::<String>()
+    );
+
     println!("\n🔹 Instance Config:");
-    println!("  Type: {}", if config.instance.instance_type == "amd" { "AMD Micro" } else { "ARM Flex" });
+    println!(
+        "  Type: {}",
+        if config.instance.instance_type == "amd" {
+            "AMD Micro"
+        } else {
+            "ARM Flex"
+        }
+    );
     println!("  Name: {}", config.instance.display_name);
-    if let (Some(ocpus), Some(memory)) = (config.instance.arm_ocpus, config.instance.arm_memory_gb) {
+    if let (Some(ocpus), Some(memory)) = (config.instance.arm_ocpus, config.instance.arm_memory_gb)
+    {
         println!("  OCPU: {}", ocpus);
         println!("  Memory: {} GB", memory);
     }
     println!("  Boot Volume: {} GB", config.instance.boot_volume_size_gb);
-    
+
     println!("\n🔹 Network Config:");
-    println!("  Public IPv4: {}", if config.network.assign_public_ip { "Yes" } else { "No" });
-    println!("  IPv6:        {}", if config.network.assign_ipv6 { "Yes" } else { "No" });
+    println!(
+        "  Public IPv4: {}",
+        if config.network.assign_public_ip {
+            "Yes"
+        } else {
+            "No"
+        }
+    );
+    println!(
+        "  IPv6:        {}",
+        if config.network.assign_ipv6 {
+            "Yes"
+        } else {
+            "No"
+        }
+    );
     if let Some(ip) = &config.network.private_ip {
         println!("  Private IPv4: {}", ip);
     }
@@ -95,18 +146,50 @@ pub fn display_config(config: &InstanceConfigFile) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
-pub fn load_existing_config() -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>> {
+pub fn display_cloudflare_config(
+    config: &InstanceConfigFile,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    println!("\n🔹 Cloudflare DNS Config:");
+    println!(
+        "  API Token: {}",
+        if config.cloudflare.api_token.is_empty() {
+            "Not set"
+        } else {
+            "Set"
+        }
+    );
+    println!(
+        "  Zone Name: {}",
+        if config.cloudflare.zone_name.is_empty() {
+            "Not set"
+        } else {
+            &config.cloudflare.zone_name
+        }
+    );
+    if let Some(record_name) = &config.cloudflare.record_name {
+        println!("  Record:    {}", record_name);
+    }
+    println!();
+
+    Ok(())
+}
+
+pub fn load_existing_config() -> Result<InstanceConfigFile, Box<dyn std::error::Error + Send + Sync>>
+{
     if !InstanceConfigFile::exists(CONFIG_FILE) {
         return Err(format!(
             "config file not found at {}. Run `cloud-manage reconfigure` first.",
             CONFIG_FILE
-        ).into());
+        )
+        .into());
     }
     Ok(InstanceConfigFile::load_from_file(CONFIG_FILE)?)
 }
 
-pub fn save_config_and_exit(config: &InstanceConfigFile) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub fn save_config_and_exit(
+    config: &InstanceConfigFile,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     config.save_to_file(CONFIG_FILE)?;
-    println!("\n✅ Configuration saved. Please restart the program.");
+    println!("\n✅ Configuration saved.");
     Ok(())
 }
