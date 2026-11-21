@@ -154,10 +154,21 @@ async fn run_command(cmd: Command) -> AppResult<()> {
             let config = config::load_existing_config()?;
             instance::handle_create_command(&config).await?;
         }
-        Command::RefreshIp { instance_id } => {
+        Command::RefreshIp {
+            instance_id,
+            vnic_id,
+            private_ip_id,
+        } => {
             let config = config::load_existing_config()?;
             if let Some(instance_id) = instance_id {
-                instance::refresh_public_ipv4(&config, &instance_id, true).await?;
+                instance::refresh_public_ipv4(
+                    &config,
+                    &instance_id,
+                    vnic_id.as_deref(),
+                    private_ip_id.as_deref(),
+                    true,
+                )
+                .await?;
             } else {
                 instance::refresh_public_ipv4_auto(&config).await?;
             }

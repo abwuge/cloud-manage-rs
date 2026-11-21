@@ -97,7 +97,7 @@ pub async fn serve(
     };
 
     let protected = Router::new()
-        .route("/config", get(api::get_config))
+        .route("/config", get(api::get_config).put(api::update_config))
         .route("/instances", get(api::list_instances))
         .route("/instances", post(api::create_instance))
         .route(
@@ -105,7 +105,7 @@ pub async fn serve(
             post(api::refresh_instance_ip),
         )
         .route("/dns", get(api::list_dns).post(api::upsert_dns))
-        .route("/dns/:id", delete(api::delete_dns))
+        .route("/dns/:id", delete(api::delete_dns).put(api::update_dns))
         .route("/snipe/stream", get(api::snipe_stream))
         .layer(middleware::from_fn_with_state(
             state.clone(),

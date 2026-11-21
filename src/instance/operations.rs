@@ -1,10 +1,13 @@
 use crate::config::config::InstanceConfigFile;
 use crate::dns;
-use crate::providers::oracle::{OracleInstanceCreator, PublicIpv4Target};
+use crate::providers::oracle::{
+    InstanceNetworkSummary, OracleInstanceCreator, PublicIpv4Target,
+};
 use crate::ui::ghost_input::ghost_input;
 use dialoguer::{Confirm, Select, theme::ColorfulTheme};
 use oci_rust_sdk::compute::models::LifecycleState;
 use std::time::Duration;
+use tokio::sync::watch;
 use tokio::time::sleep;
 
 use crate::common::utils::{
@@ -129,6 +132,23 @@ pub async fn snipe_instance_core<F>(
     max_delay: f64,
     max_attempts: u32,
     bypass: bool,
+    on_event: F,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    F: FnMut(SnipeEvent),
+{
+    let (_tx, rx) = watch::channel(false);
+    snipe_instance_cancellable(config, min_delay, max_delay, max_attempts, bypass, rx, on_event)
+        .await
+}
+
+pub async fn snipe_instance_cancellable<F>(
+    config: &InstanceConfigFile,
+    min_delay: f64,
+    max_delay: f64,
+    max_attempts: u32,
+    bypass: bool,
+    mut cancel_rx: watch::Receiver<bool>,
     mut on_event: F,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
@@ -152,6 +172,13 @@ where
 
     let mut attempt: u32 = 0;
     loop {
+        if *cancel_rx.borrow() {
+            on_event(SnipeEvent::Stopped {
+                reason: "cancelled".to_string(),
+            });
+            return Ok(());
+        }
+
         attempt += 1;
         if max_attempts != 0 && attempt > max_attempts {
             on_event(SnipeEvent::Stopped {
@@ -161,7 +188,17 @@ where
         }
 
         on_event(SnipeEvent::AttemptStart { attempt });
-        match creator.create_instance(&instance_config).await {
+        let launch_result = tokio::select! {
+            res = creator.create_instance(&instance_config) => res,
+            _ = cancel_rx.changed() => {
+                on_event(SnipeEvent::Stopped {
+                    reason: "cancelled".to_string(),
+                });
+                return Ok(());
+            }
+        };
+
+        match launch_result {
             Ok(id) => {
                 on_event(SnipeEvent::Success {
                     attempt,
@@ -192,7 +229,15 @@ where
             attempt,
             delay_secs: delay,
         });
-        sleep(Duration::from_secs_f64(delay)).await;
+        tokio::select! {
+            _ = sleep(Duration::from_secs_f64(delay)) => {}
+            _ = cancel_rx.changed() => {
+                on_event(SnipeEvent::Stopped {
+                    reason: "cancelled".to_string(),
+                });
+                return Ok(());
+            }
+        }
     }
 }
 
@@ -285,6 +330,8 @@ pub async fn refresh_public_ipv4_from_targets(
     let result = refresh_public_ipv4_target(config, &targets[selection], exit_on_error).await?;
     if let Some(result) = result {
         targets[selection].public_ip = Some(result.new_public_ip.clone());
+        targets[selection].public_ip_id = Some(result.new_public_ip_id.clone());
+        targets[selection].public_ip_lifetime = Some("EPHEMERAL".to_string());
         targets[selection].public_ip_error = None;
     }
     Ok(())
@@ -293,6 +340,8 @@ pub async fn refresh_public_ipv4_from_targets(
 pub async fn refresh_public_ipv4(
     config: &InstanceConfigFile,
     instance_id: &str,
+    vnic_id: Option<&str>,
+    private_ip_id: Option<&str>,
     exit_on_error: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if instance_id.is_empty() {
@@ -305,10 +354,13 @@ pub async fn refresh_public_ipv4(
 
     let creator = OracleInstanceCreator::new(config.clone());
     let result = match creator
-        .public_ipv4_target_for_instance_id(instance_id)
+        .public_ipv4_target_for_instance_id(instance_id, vnic_id, private_ip_id)
         .await
     {
-        Ok(target) => creator.refresh_public_ipv4_target(&target).await,
+        Ok(target) => {
+            println!("🔌 VNIC: {} ({})", vnic_role_label(&target), target.private_ip);
+            creator.refresh_public_ipv4_target(&target).await
+        }
         Err(error) => Err(error),
     };
 
@@ -350,7 +402,12 @@ async fn refresh_public_ipv4_target(
     Box<dyn std::error::Error + Send + Sync>,
 > {
     println!("\n🔄 Refreshing public IPv4...");
-    println!("Instance: {}", target_name(target));
+    println!(
+        "Instance: {} [{} · {}]",
+        target_name(target),
+        vnic_role_label(target),
+        target.private_ip
+    );
     println!(
         "Current public IPv4: {}",
         target.public_ip.as_deref().unwrap_or("none")
@@ -419,6 +476,13 @@ async fn maybe_update_dns_after_refresh(
     Ok(())
 }
 
+pub async fn load_instance_networks(
+    config: &InstanceConfigFile,
+) -> Result<Vec<InstanceNetworkSummary>, Box<dyn std::error::Error + Send + Sync>> {
+    let creator = OracleInstanceCreator::new(config.clone());
+    creator.list_instance_networks().await
+}
+
 pub async fn load_public_ipv4_targets(
     config: &InstanceConfigFile,
 ) -> Result<Vec<PublicIpv4Target>, Box<dyn std::error::Error + Send + Sync>> {
@@ -428,6 +492,14 @@ pub async fn load_public_ipv4_targets(
         target_sort_key(a)
             .cmp(&target_sort_key(b))
             .then_with(|| a.instance_id.cmp(&b.instance_id))
+            .then_with(|| (!a.is_primary_vnic).cmp(&(!b.is_primary_vnic)))
+            .then_with(|| {
+                a.nic_index
+                    .unwrap_or(i32::MAX)
+                    .cmp(&b.nic_index.unwrap_or(i32::MAX))
+            })
+            .then_with(|| (!a.is_primary_private_ip).cmp(&(!b.is_primary_private_ip)))
+            .then_with(|| a.private_ip.cmp(&b.private_ip))
     });
 
     Ok(targets)
@@ -453,7 +525,7 @@ fn pick_instance_for_refresh(
     }
     let items: Vec<String> = targets.iter().map(format_target_option).collect();
     let selection = Select::with_theme(&ColorfulTheme::default())
-        .with_prompt("Select instance to refresh public IPv4")
+        .with_prompt("Select instance / VNIC to refresh public IPv4")
         .items(&items)
         .default(0)
         .interact()?;
@@ -467,8 +539,22 @@ fn target_sort_key(target: &PublicIpv4Target) -> (u8, String) {
     } else {
         1
     };
-    let name = target.display_name.clone().unwrap_or_default();
+    let name = target.display_name.clone().unwrap_or_default().to_lowercase();
     (state_rank, name)
+}
+
+fn vnic_role_label(target: &PublicIpv4Target) -> &'static str {
+    if target.is_primary_vnic {
+        if target.is_primary_private_ip {
+            "primary"
+        } else {
+            "primary/2nd-ip"
+        }
+    } else if target.is_primary_private_ip {
+        "secondary"
+    } else {
+        "secondary/2nd-ip"
+    }
 }
 
 fn format_target_option(target: &PublicIpv4Target) -> String {
@@ -477,11 +563,18 @@ fn format_target_option(target: &PublicIpv4Target) -> String {
         (None, Some(_)) => "unavailable",
         (None, None) => "none",
     };
+    let lifetime = match target.public_ip_lifetime.as_deref() {
+        Some(l) if l.eq_ignore_ascii_case("RESERVED") => " (reserved)",
+        _ => "",
+    };
     format!(
-        "{:<12} {:<28} {}",
+        "{:<10} {:<22} [{:<9}] {:<15} -> {}{}",
         format!("{:?}", target.lifecycle_state),
         target_name(target),
-        public_ip
+        vnic_role_label(target),
+        target.private_ip,
+        public_ip,
+        lifetime,
     )
 }
 

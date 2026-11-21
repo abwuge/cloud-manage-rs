@@ -12,6 +12,10 @@ pub enum Command {
     Create,
     RefreshIp {
         instance_id: Option<String>,
+        #[arg(long)]
+        vnic_id: Option<String>,
+        #[arg(long)]
+        private_ip_id: Option<String>,
     },
     Dns {
         #[command(subcommand)]
