@@ -329,6 +329,36 @@ impl ComputeClient {
         Self::handle_response(response).await
     }
 
+    /// Get public IP assigned to a private IP OCID. Returns `Ok(None)` when no public IP is assigned.
+    pub async fn get_public_ip_by_private_ip_id(
+        &self,
+        private_ip_id: &str,
+    ) -> Result<Option<PublicIp>, Box<dyn std::error::Error + Send + Sync>> {
+        let path = "/20160918/publicIps/actions/getByPrivateIpId";
+        let url = format!("{}{}", self.endpoint(), path);
+        let body = serde_json::json!({ "privateIpId": private_ip_id });
+        let body = serde_json::to_vec(&body)?;
+
+        let response = self
+            .build_signed_request(
+                "POST",
+                &url,
+                path,
+                Some(&body),
+                &[("content-type", "application/json")],
+            )?
+            .header("content-type", "application/json")
+            .body(body)
+            .send()
+            .await?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        Self::handle_response(response).await.map(Some)
+    }
+
     /// Get public IP by IPv4 address
     pub async fn get_public_ip_by_ip_address(
         &self,

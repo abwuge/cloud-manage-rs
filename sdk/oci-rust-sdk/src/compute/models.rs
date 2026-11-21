@@ -92,6 +92,20 @@ pub struct LaunchInstanceShapeConfigDetails {
     pub memory_in_gbs: Option<f32>,
 }
 
+/// Instance shape configuration (returned on flex instances)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstanceShapeConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ocpus: Option<f32>,
+
+    #[serde(rename = "memoryInGBs", default, skip_serializing_if = "Option::is_none")]
+    pub memory_in_gbs: Option<f32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub networking_bandwidth_in_gbps: Option<f32>,
+}
+
 /// Instance information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,6 +115,8 @@ pub struct Instance {
     pub availability_domain: String,
     pub lifecycle_state: LifecycleState,
     pub shape: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape_config: Option<InstanceShapeConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region: Option<String>,
     
@@ -160,6 +176,7 @@ pub struct Shape {
     pub shape: String,
     pub processor_description: Option<String>,
     pub ocpus: Option<f32>,
+    #[serde(rename = "memoryInGBs", default)]
     pub memory_in_gbs: Option<f32>,
     pub networking_bandwidth_in_gbps: Option<f32>,
 }
@@ -198,14 +215,20 @@ pub struct VnicAttachment {
     pub instance_id: String,
     pub lifecycle_state: String,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vnic_id: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subnet_id: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nic_index: Option<i32>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vlan_tag: Option<i32>,
 }
 
 /// VNIC information
@@ -216,16 +239,28 @@ pub struct Vnic {
     pub compartment_id: String,
     pub lifecycle_state: String,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subnet_id: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mac_address: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hostname_label: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub private_ip: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub public_ip: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ipv6_addresses: Option<Vec<String>>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_primary: Option<bool>,
 }
 
@@ -239,8 +274,14 @@ pub struct PrivateIp {
     pub vnic_id: String,
     pub is_primary: bool,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hostname_label: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subnet_id: Option<String>,
 }
 
 /// Public IP information
