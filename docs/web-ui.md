@@ -1,22 +1,21 @@
 # Web UI
 
 `cloud-manage` ships with an embedded web UI served by an in-process
-[axum](https://docs.rs/axum) server. The frontend (`web/index.html`) is
-compiled into the binary via [`rust-embed`](https://docs.rs/rust-embed), so
-the release build is a **single self-contained executable** — no Node tool
-chain, no static file hosting, no extra deployment artifacts.
+[axum](https://docs.rs/axum) server. The static frontend under `web/` is
+compiled into the binary via [`rust-embed`](https://docs.rs/rust-embed) with
+no external CDN dependencies or Node build step.
 
 ## Launching
 
 ```bash
-cloud-manage serve                         # http://127.0.0.1:7878
-cloud-manage serve --port 9000             # custom port
+cloud-manage serve                              # http://127.0.0.1:7878
+cloud-manage serve --port 9000                  # custom port
 cloud-manage serve --host 0.0.0.0 --port 9000   # bind all interfaces
 ```
 
-The server reads `./config/config` at startup (the same file used by every
-other subcommand). Reconfiguring while the server is running requires a
-restart.
+The server loads `./config/config` at startup. Updates saved from the
+**Settings** panel persist to `./config/config` and apply immediately in
+memory without restarting.
 
 ## Authentication
 
@@ -53,35 +52,35 @@ it.
 
 ## Features
 
-The single-page app exposes four panels:
+The web console exposes four panels:
 
 | Panel | What it does |
 | --- | --- |
-| **Overview** | Counters (instance total / running / DNS records / snipe window) and a read-only configuration summary. |
-| **Instances** | Lists Oracle Cloud instances with lifecycle state & public IPv4. Launch a new instance from the current configuration; refresh a running instance's public IPv4 and optionally sync any Cloudflare `A` records that were pointing to the old IP. |
-| **DNS** | Lists Cloudflare DNS records for the configured zone. Create / edit / delete records. |
-| **Snipe** | Starts the same retry loop as `cloud-manage snipe`, streaming attempt-by-attempt progress into the browser over Server-Sent Events. Parameters (min/max delay, attempt cap, bypass) can be overridden per run without touching the config file. |
+| **Instances** | Lists Oracle Cloud instances with shape, lifecycle state, and all attached VNICs (primary and secondary), including public IPv4/IPv6, private IPv4, linked Cloudflare `A` records, per-VNIC public IPv4 rotation, and instance launch. |
+| **DNS** | Lists, searches, filters, creates, updates, toggles proxy on, and deletes Cloudflare DNS records for the configured zone, highlighting `A` records linked to active Oracle VNICs. |
+| **Snipe** | Runs the instance creation retry loop over Server-Sent Events with live attempt logs, elapsed timer, retry countdown, and immediate server-side cancellation when stopped. |
+| **Settings** | Edits instance defaults, network defaults, snipe defaults, and Cloudflare DNS settings live (saving to `./config/config`), and displays copyable Oracle Cloud connection IDs. |
 
 Sensitive fields (`api_token`, OCI `passphrase`) are never returned by
-`/api/config`; only a boolean `api_token_set` is exposed so the UI can hint
-that Cloudflare credentials are present.
+`/api/config`; only `api_token_set` is exposed.
 
 ## REST API
 
-Base path: `/api`. All responses are JSON; errors use the shape
-`{ "error": "<message>" }` with a `4xx`/`5xx` status code.
+Base path: `/api`. Responses are JSON; errors return `{ "error": "<message>" }` with a `4xx`/`5xx` status.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/config` | Redacted view of the active configuration. |
-| `GET` | `/instances` | List instances with lifecycle state and public IPv4. |
+| `PUT` | `/config` | Update instance, network, snipe, and Cloudflare settings in memory and on disk. |
+| `GET` | `/instances` | List active instances with all attached VNICs (`is_primary`, private/public IPv4, IPv6, lifetime, refresh eligibility). |
 | `POST` | `/instances` | Launch one instance. Body: `{ "display_name": "optional-override" }`. |
-| `POST` | `/instances/:id/refresh-ip` | Release & reallocate the ephemeral public IPv4. Body: `{ "update_dns": true }` to also rewrite matching Cloudflare `A` records. |
+| `POST` | `/instances/:id/refresh-ip` | Rotate an ephemeral public IPv4. Body: `{ "update_dns": true, "vnic_id": "...", "private_ip_id": "..." }`. Defaults to the instance's primary VNIC when `vnic_id` and `private_ip_id` are omitted. |
 | `GET` | `/dns?type=A&name=foo` | List Cloudflare DNS records (filters optional). |
-| `POST` | `/dns` | Upsert. Body: `{ type, name, content, ttl?, proxied? }`. |
+| `POST` | `/dns` | Upsert a DNS record. Body: `{ type, name, content, ttl?, proxied? }`. |
+| `PUT` | `/dns/:id` | Update an existing DNS record by id. |
 | `DELETE` | `/dns/:id` | Delete a DNS record by id. |
 | `GET` | `/snipe/stream` | Server-Sent Events stream for snipe progress. Query params: `min_delay`, `max_delay`, `max_attempts`, `bypass`, `token`. |
-| `GET` | `/auth-status` | Unauthenticated. Returns `{ "auth_required": bool }` so the frontend can decide whether to prompt for a token. |
+| `GET` | `/auth-status` | Unauthenticated. Returns `{ "auth_required": bool }`. |
 
 ### Snipe SSE events
 
@@ -96,22 +95,21 @@ Each event has a named `event:` type and a JSON `data:` payload:
 | `success` | `{ attempt, instance_id }` |
 | `stopped` | `{ reason }` |
 
-The stream terminates after `success` or `stopped`. Closing the
-`EventSource` on the client does **not** abort an in-flight retry loop — the
-loop will continue until it reaches its natural terminal state (success,
-non-retryable error, or attempt cap). This mirrors the CLI `snipe`
-behavior.
+The stream ends on `success` or `stopped`. Closing the `EventSource` from the
+browser cancels the in-flight server-side retry loop.
 
 ## Example: scripted refresh + DNS sync
 
 ```bash
 curl -X POST http://127.0.0.1:7878/api/instances/ocid1.instance.oc1..xxx/refresh-ip \
   -H 'Content-Type: application/json' \
-  -d '{"update_dns": true}'
+  -d '{"update_dns": true, "vnic_id": "ocid1.vnic.oc1..yyy"}'
 ```
 
 ```json
 {
+  "vnic_id": "ocid1.vnic.oc1..yyy",
+  "private_ip_id": "ocid1.privateip.oc1..zzz",
   "old_public_ip": "203.0.113.10",
   "new_public_ip": "203.0.113.42",
   "dns_updated": [
@@ -123,14 +121,11 @@ curl -X POST http://127.0.0.1:7878/api/instances/ocid1.instance.oc1..xxx/refresh
 
 ## Architecture notes
 
-- The server reuses the exact same provider modules as the CLI
+- The server reuses the same provider modules as the CLI
   (`OracleInstanceCreator`, `cloudflare_rust_sdk::dns::DnsClient`,
-  `dns::update_a_records_pointing_to_ip`). There is no duplicated business
-  logic between CLI and web.
-- `snipe_instance_core` (in `src/instance/operations.rs`) takes an
-  `FnMut(SnipeEvent)` callback. The CLI wraps it with a `println!`-based
-  reporter; the web layer wraps it with an mpsc channel that is adapted to
-  an SSE stream.
-- Static assets live in `web/` and are embedded at compile time by the
-  `StaticAssets` struct in `src/web/assets.rs`. Any unknown path falls back
-  to `index.html` so that SPA-style routing works.
+  `dns::update_a_records_pointing_to_ip`).
+- `snipe_instance_cancellable` (in `src/instance/operations.rs`) accepts a
+  `tokio::sync::watch::Receiver<bool>` cancellation signal and an
+  `FnMut(SnipeEvent)` callback.
+- Static assets live in `web/` (`index.html`, `styles.css`, `js/*.js`) and are
+  embedded at compile time by `StaticAssets` in `src/web/assets.rs`.
